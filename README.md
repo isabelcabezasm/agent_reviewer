@@ -19,12 +19,17 @@ Inspired by pr-agent's modular design:
 
 ```
 src/
-├── main.py          # CLI entry point (argparse)
-├── config.py        # Configuration loading from .env
-├── ai_handler.py    # Azure OpenAI API client
-├── reviewer.py      # Core review orchestrator
-├── prompts.py       # Review prompt templates
-└── diff_utils.py    # Git diff & file utilities
+├── main.py           # CLI entry point (argparse)
+├── config.py         # Configuration loading from .env
+├── ai_handler.py     # Azure OpenAI API client
+├── reviewer.py       # Core review orchestrator
+├── prompts.py        # Review prompt templates
+├── diff_utils.py     # Git diff & file utilities
+├── github_utils.py   # GitHub repo cloning (public + private)
+└── web/
+    ├── app.py        # FastAPI web application & REST API
+    └── static/
+        └── index.html  # Web UI (single-page app)
 ```
 
 ## Getting Started
@@ -111,6 +116,51 @@ uv run python -m src.main --repo /path/to/other/repo --commit HEAD~1
 | `bin/lint/md` | Lint Markdown files |
 | `bin/test` | Run all unit tests |
 | `uv run pytest tests/ -v` | Run tests with verbose output |
+
+## Web UI
+
+A full web interface for reviewing any GitHub repository — including **private repos** using a Personal Access Token.
+
+### Launch the Web UI
+
+```bash
+uv run uvicorn src.web.app:app --reload --host 0.0.0.0 --port 8000
+```
+
+Then open **http://localhost:8000** in your browser.
+
+### Features
+
+- **Repository URL** — paste any GitHub repo URL
+- **GitHub PAT** — for private repositories (never stored, used only for cloning)
+- **Review Modes** — Full repo, branch diff, or last commit
+- **Custom Instructions** — tell the AI what to focus on
+- **File Filters** — choose extensions and max files to review
+- **Rich Results** — score badge, expandable issues by severity, code suggestions, and positive highlights
+- **Raw YAML** — toggle the raw AI output
+
+### REST API
+
+The web app also exposes a REST API:
+
+```bash
+# Review a public repo
+curl -X POST http://localhost:8000/api/review \
+  -H "Content-Type: application/json" \
+  -d '{"repo_url": "https://github.com/owner/repo"}'
+
+# Review a private repo
+curl -X POST http://localhost:8000/api/review \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/owner/private-repo",
+    "github_pat": "ghp_xxxxxxxxxxxx",
+    "instructions": "Focus on security and error handling"
+  }'
+
+# Health check
+curl http://localhost:8000/api/health
+```
 
 ## License
 

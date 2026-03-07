@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Reviewer — AI Code Review</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2129;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --accent-hover: #79c0ff;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --critical-bg: rgba(248, 81, 73, 0.1);
+            --important-bg: rgba(210, 153, 34, 0.1);
+            --suggestion-bg: rgba(63, 185, 80, 0.1);
+            --code-bg: #1a1f26;
+            --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .header .badge {
+            font-size: 11px;
+            background: var(--accent);
+            color: var(--bg);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        /* Form Panel */
+        .form-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 28px;
+            margin-bottom: 24px;
+        }
+
+        .form-panel h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        input, textarea, select {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: var(--text);
+            font-family: var(--font);
+            transition: border-color 0.15s;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: var(--text-muted);
+            opacity: 0.6;
+        }
+
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+            font-family: var(--font);
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Review Mode Selector */
+        .mode-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .mode-btn {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: var(--font);
+        }
+
+        .mode-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .mode-btn.active {
+            background: rgba(88, 166, 255, 0.1);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        /* Optional fields container */
+        .branch-field {
+            display: none;
+            margin-bottom: 16px;
+        }
+
+        .branch-field.visible {
+            display: block;
+        }
+
+        /* Actions */
+        .actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 6px;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-family: var(--font);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Loading */
+        .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid transparent;
+            border-top-color: var(--bg);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-text {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* Results Panel */
+        .results-panel {
+            display: none;
+        }
+
+        .results-panel.visible {
+            display: block;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .results-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Score Badge */
+        .score-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .score-high { background: rgba(63, 185, 80, 0.15); color: var(--success); }
+        .score-mid { background: rgba(210, 153, 34, 0.15); color: var(--warning); }
+        .score-low { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
+
+        /* Summary Card */
+        .summary-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .summary-card h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-muted);
+        }
+
+        .summary-card p, .summary-card .content {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* Issues */
+        .issue-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+
+        .issue-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 18px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .issue-header:hover {
+            background: var(--surface-hover);
+        }
+
+        .severity-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .severity-critical .severity-dot { background: var(--danger); }
+        .severity-important .severity-dot { background: var(--warning); }
+        .severity-suggestion .severity-dot { background: var(--success); }
+
+        .issue-title {
+            font-size: 14px;
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .issue-meta {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .issue-tag {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+
+        .tag-critical { background: var(--critical-bg); color: var(--danger); }
+        .tag-important { background: var(--important-bg); color: var(--warning); }
+        .tag-suggestion { background: var(--suggestion-bg); color: var(--success); }
+
+        .category-tag {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: rgba(88, 166, 255, 0.1);
+            color: var(--accent);
+            font-weight: 500;
+        }
+
+        .chevron {
+            color: var(--text-muted);
+            transition: transform 0.2s;
+            font-size: 12px;
+        }
+
+        .issue-card.open .chevron {
+            transform: rotate(90deg);
+        }
+
+        .issue-body {
+            display: none;
+            padding: 0 18px 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .issue-card.open .issue-body {
+            display: block;
+        }
+
+        .issue-file {
+            font-size: 13px;
+            color: var(--accent);
+            font-family: var(--font-mono);
+            margin: 12px 0 8px;
+        }
+
+        .issue-description {
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .suggestion-block {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .suggestion-label {
+            font-size: 12px;
+            color: var(--success);
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        /* Highlights */
+        .highlights-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .highlights-list li {
+            font-size: 14px;
+            line-height: 1.6;
+            padding: 4px 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .highlights-list li::before {
+            content: "✓";
+            color: var(--success);
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        /* Error */
+        .error-panel {
+            display: none;
+            background: var(--critical-bg);
+            border: 1px solid var(--danger);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+
+        .error-panel.visible {
+            display: block;
+        }
+
+        /* Raw output toggle */
+        .raw-toggle {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-family: var(--font);
+        }
+
+        .raw-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+        .raw-output {
+            display: none;
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            max-height: 600px;
+            overflow-y: auto;
+            margin-top: 16px;
+        }
+
+        .raw-output.visible { display: block; }
+
+        @media (max-width: 640px) {
+            .form-row { grid-template-columns: 1fr; }
+            .mode-selector { flex-wrap: wrap; }
+            .container { padding: 16px 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/>
+    </svg>
+    <h1>Agent Reviewer</h1>
+    <span class="badge">AI-Powered</span>
+</div>
+
+<div class="container">
+    <!-- Form -->
+    <div class="form-panel">
+        <h2>🔍 Review Configuration</h2>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="repo_url">Repository URL *</label>
+                <input type="url" id="repo_url" placeholder="https://github.com/owner/repo" required>
+            </div>
+            <div class="form-group">
+                <label for="github_pat">GitHub PAT (for private repos)</label>
+                <input type="password" id="github_pat" placeholder="ghp_xxxxxxxxxxxx">
+                <span class="hint">Personal Access Token — never stored</span>
+            </div>
+        </div>
+
+        <label style="margin-bottom: 8px; display: block;">Review Mode</label>
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="full" onclick="selectMode(this)">📄 Full Repo</button>
+            <button class="mode-btn" data-mode="branch" onclick="selectMode(this)">🌿 Branch Diff</button>
+            <button class="mode-btn" data-mode="commit" onclick="selectMode(this)">📌 Last Commit</button>
+        </div>
+
+        <div class="branch-field" id="branchField">
+            <div class="form-group">
+                <label for="branch">Branch name</label>
+                <input type="text" id="branch" placeholder="main">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="file_extensions">File extensions to review</label>
+                <input type="text" id="file_extensions" placeholder=".py, .js, .ts (leave empty for all code files)">
+            </div>
+            <div class="form-group">
+                <label for="max_files">Max files to review</label>
+                <input type="number" id="max_files" value="30" min="1" max="100">
+            </div>
+        </div>
+
+        <div class="form-group full-width" style="margin-bottom: 20px;">
+            <label for="instructions">Review Instructions</label>
+            <textarea id="instructions" placeholder="Focus on security vulnerabilities and error handling. Check if there are proper unit tests for critical paths. Look for SQL injection risks..."></textarea>
+            <span class="hint">Tell the AI what to focus on — leave empty for a full general review</span>
+        </div>
+
+        <div class="actions">
+            <button class="btn-primary" id="reviewBtn" onclick="startReview()">
+                <span class="spinner" id="spinner"></span>
+                <span id="btnText">🚀 Start Review</span>
+            </button>
+            <span class="status-text" id="statusText"></span>
+        </div>
+    </div>
+
+    <!-- Error -->
+    <div class="error-panel" id="errorPanel"></div>
+
+    <!-- Results -->
+    <div class="results-panel" id="resultsPanel">
+        <div class="results-header">
+            <h2>📋 Review Results</h2>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="score-badge" id="scoreBadge"></div>
+                <button class="raw-toggle" onclick="toggleRaw()">{ } Raw YAML</button>
+            </div>
+        </div>
+
+        <div class="summary-card" id="summaryCard">
+            <h3>Summary</h3>
+            <div class="content" id="summaryContent"></div>
+        </div>
+
+        <div id="securityCard" class="summary-card" style="display: none;">
+            <h3>🔒 Security Concerns</h3>
+            <div class="content" id="securityContent"></div>
+        </div>
+
+        <div id="testsCard" class="summary-card" style="display: none;">
+            <h3>🧪 Tests Assessment</h3>
+            <div class="content" id="testsContent"></div>
+        </div>
+
+        <div id="issuesContainer"></div>
+
+        <div class="summary-card" id="highlightsCard" style="display: none;">
+            <h3>✨ Positive Highlights</h3>
+            <ul class="highlights-list" id="highlightsList"></ul>
+        </div>
+
+        <div class="raw-output" id="rawOutput"></div>
+    </div>
+</div>
+
+<script>
+    let currentMode = 'full';
+
+    function selectMode(btn) {
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentMode = btn.dataset.mode;
+        const branchField = document.getElementById('branchField');
+        branchField.classList.toggle('visible', currentMode === 'branch');
+    }
+
+    function setStatus(text) {
+        document.getElementById('statusText').textContent = text;
+    }
+
+    function showError(msg) {
+        const el = document.getElementById('errorPanel');
+        el.textContent = '❌ ' + msg;
+        el.classList.add('visible');
+    }
+
+    function clearResults() {
+        document.getElementById('errorPanel').classList.remove('visible');
+        document.getElementById('resultsPanel').classList.remove('visible');
+        document.getElementById('rawOutput').classList.remove('visible');
+        document.getElementById('issuesContainer').innerHTML = '';
+        document.getElementById('highlightsList').innerHTML = '';
+    }
+
+    async function startReview() {
+        const repoUrl = document.getElementById('repo_url').value.trim();
+        if (!repoUrl) {
+            showError('Please enter a repository URL.');
+            return;
+        }
+
+        clearResults();
+
+        const btn = document.getElementById('reviewBtn');
+        const spinner = document.getElementById('spinner');
+        btn.disabled = true;
+        spinner.style.display = 'inline-block';
+        document.getElementById('btnText').textContent = 'Reviewing...';
+        setStatus('Cloning repository...');
+
+        const extStr = document.getElementById('file_extensions').value.trim();
+        const extensions = extStr ? extStr.split(',').map(e => e.trim()).filter(Boolean) : null;
+
+        const payload = {
+            repo_url: repoUrl,
+            github_pat: document.getElementById('github_pat').value.trim() || null,
+            mode: currentMode,
+            branch: currentMode === 'branch' ? (document.getElementById('branch').value.trim() || 'main') : null,
+            instructions: document.getElementById('instructions').value.trim() || '',
+            file_extensions: extensions,
+            max_files: parseInt(document.getElementById('max_files').value) || 30,
+        };
+
+        try {
+            setStatus('Sending to AI for review...');
+            const resp = await fetch('/api/review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                showError(data.detail || 'Review failed.');
+                return;
+            }
+
+            renderResults(data);
+        } catch (err) {
+            showError('Network error: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            spinner.style.display = 'none';
+            document.getElementById('btnText').textContent = '🚀 Start Review';
+            setStatus('');
+        }
+    }
+
+    function renderResults(data) {
+        const panel = document.getElementById('resultsPanel');
+        panel.classList.add('visible');
+
+        // Raw YAML
+        document.getElementById('rawOutput').textContent = data.raw_review || '';
+
+        const review = data.parsed_review;
+        if (!review) {
+            document.getElementById('summaryContent').textContent = data.raw_review || 'No review data received.';
+            return;
+        }
+
+        // Score
+        const score = parseInt(review.score);
+        const badge = document.getElementById('scoreBadge');
+        if (!isNaN(score)) {
+            badge.textContent = `Score: ${score}/100`;
+            badge.className = 'score-badge ' + (score >= 75 ? 'score-high' : score >= 50 ? 'score-mid' : 'score-low');
+        } else {
+            badge.textContent = '';
+        }
+
+        // Summary
+        document.getElementById('summaryContent').textContent = review.summary || 'No summary provided.';
+
+        // Security
+        const secText = review.security_concerns || '';
+        const secCard = document.getElementById('securityCard');
+        if (secText && secText.toLowerCase() !== 'no') {
+            document.getElementById('securityContent').textContent = secText;
+            secCard.style.display = 'block';
+        } else {
+            secCard.style.display = 'none';
+        }
+
+        // Tests
+        const testsText = review.tests_assessment || '';
+        const testsCard = document.getElementById('testsCard');
+        if (testsText) {
+            document.getElementById('testsContent').textContent = testsText;
+            testsCard.style.display = 'block';
+        } else {
+            testsCard.style.display = 'none';
+        }
+
+        // Issues
+        const container = document.getElementById('issuesContainer');
+        container.innerHTML = '';
+        const issues = review.key_issues || [];
+        if (issues.length > 0) {
+            const heading = document.createElement('h3');
+            heading.style.cssText = 'font-size: 14px; color: #8b949e; margin-bottom: 12px;';
+            heading.textContent = `Key Issues (${issues.length})`;
+            container.appendChild(heading);
+        }
+        issues.forEach((issue, i) => {
+            container.appendChild(createIssueCard(issue, i));
+        });
+
+        // Highlights
+        const highlights = review.positive_highlights || [];
+        const hCard = document.getElementById('highlightsCard');
+        const hList = document.getElementById('highlightsList');
+        hList.innerHTML = '';
+        if (highlights.length > 0) {
+            highlights.forEach(h => {
+                const li = document.createElement('li');
+                li.textContent = h;
+                hList.appendChild(li);
+            });
+            hCard.style.display = 'block';
+        } else {
+            hCard.style.display = 'none';
+        }
+    }
+
+    function createIssueCard(issue, index) {
+        const severity = (issue.severity || 'suggestion').toLowerCase();
+        const card = document.createElement('div');
+        card.className = `issue-card severity-${severity}`;
+
+        card.innerHTML = `
+            <div class="issue-header" onclick="this.parentElement.classList.toggle('open')">
+                <span class="severity-dot"></span>
+                <span class="issue-title">${escHtml(issue.title || 'Issue #' + (index + 1))}</span>
+                <div class="issue-meta">
+                    <span class="issue-tag tag-${severity}">${severity}</span>
+                    ${issue.category ? `<span class="category-tag">${escHtml(issue.category)}</span>` : ''}
+                </div>
+                <span class="chevron">▶</span>
+            </div>
+            <div class="issue-body">
+                ${issue.file ? `<div class="issue-file">${escHtml(issue.file)}${issue.lines ? ` (lines ${escHtml(issue.lines)})` : ''}</div>` : ''}
+                <div class="issue-description">${escHtml(issue.description || '')}</div>
+                ${issue.suggestion ? `
+                    <div class="suggestion-label">💡 Suggestion</div>
+                    <div class="suggestion-block">${escHtml(issue.suggestion)}</div>
+                ` : ''}
+            </div>
+        `;
+        return card;
+    }
+
+    function escHtml(str) {
+        if (!str) return '';
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
+    }
+
+    function toggleRaw() {
+        document.getElementById('rawOutput').classList.toggle('visible');
+    }
+</script>
+
+</body>
+</html>
