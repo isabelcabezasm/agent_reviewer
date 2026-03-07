@@ -1,0 +1,53 @@
+name: "Agent Reviewer"
+description: "AI-powered code review using Azure OpenAI. Reviews PRs or code changes automatically."
+author: "isabelcabezasm"
+
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  azure_endpoint:
+    description: "Azure OpenAI API endpoint"
+    required: true
+  azure_api_key:
+    description: "Azure OpenAI API key"
+    required: true
+  azure_model_name:
+    description: "Deployed model name"
+    required: false
+    default: "gpt-5-pro"
+  azure_api_version:
+    description: "Azure OpenAI API version"
+    required: false
+    default: "2024-12-01-preview"
+  review_mode:
+    description: "Review mode: staged, branch, commit, or files"
+    required: false
+    default: "branch"
+  branch:
+    description: "Base branch for comparison (used with mode=branch)"
+    required: false
+    default: "main"
+  instructions:
+    description: "Extra review instructions for the AI"
+    required: false
+    default: ""
+  files:
+    description: "Space-separated file paths (used with mode=files)"
+    required: false
+    default: ""
+
+runs:
+  using: "docker"
+  image: "docker://ghcr.io/isabelcabezasm/agent_reviewer:latest"
+  entrypoint: "/app/action-entrypoint.sh"
+  env:
+    AZURE_MODEL_API_ENDPOINT: ${{ inputs.azure_endpoint }}
+    AZURE_MODEL_API_KEY: ${{ inputs.azure_api_key }}
+    AZURE_MODEL_API_NAME: ${{ inputs.azure_model_name }}
+    AZURE_MODEL_API_VERSION: ${{ inputs.azure_api_version }}
+    REVIEW_MODE: ${{ inputs.review_mode }}
+    REVIEW_BRANCH: ${{ inputs.branch }}
+    REVIEW_INSTRUCTIONS: ${{ inputs.instructions }}
+    REVIEW_FILES: ${{ inputs.files }}

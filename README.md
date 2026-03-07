@@ -208,6 +208,89 @@ curl -X POST http://localhost:8000/api/review \
 curl http://localhost:8000/api/health
 ```
 
+## Use from Any Project (Without Cloning This Repo)
+
+You can review code in **any repository** without having the Agent Reviewer source code there. Three options:
+
+### Option 1: Docker (Recommended)
+
+One-liner install — adds the `agent-review` command globally:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isabelcabezasm/agent_reviewer/main/bin/remote-review | bash -s -- install
+```
+
+Then use it from any project:
+
+```bash
+# Create a .env with your Azure credentials (once per project or in ~/.agent_reviewer.env)
+cat > .env << EOF
+AZURE_MODEL_API_ENDPOINT=https://your-endpoint.openai.azure.com/
+AZURE_MODEL_API_KEY=your-key
+AZURE_MODEL_API_NAME=gpt-5-pro
+AZURE_MODEL_API_VERSION=2024-12-01-preview
+EOF
+
+# Review your code
+agent-review                        # All uncommitted changes
+agent-review --staged               # Staged changes only
+agent-review --files src/app.py     # Specific files
+agent-review --branch main          # Compare to branch
+```
+
+Or run without installing:
+
+```bash
+docker run --rm \
+  -v "$(pwd):/workspace" \
+  --env-file .env \
+  ghcr.io/isabelcabezasm/agent_reviewer:latest \
+  --repo /workspace --staged
+```
+
+### Option 2: GitHub Action
+
+Add to any repo's `.github/workflows/review.yml`:
+
+```yaml
+name: AI Code Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: isabelcabezasm/agent_reviewer@main
+        with:
+          azure_endpoint: ${{ secrets.AZURE_MODEL_API_ENDPOINT }}
+          azure_api_key: ${{ secrets.AZURE_MODEL_API_KEY }}
+          azure_model_name: "gpt-5-pro"
+          instructions: "Focus on security, error handling, and test coverage"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+This auto-reviews every PR and posts the results as a comment. Works with **private repos** via the `GITHUB_TOKEN`.
+
+### Option 3: Web UI (Self-hosted API)
+
+Deploy the web service and review repos from your browser:
+
+```bash
+docker run -d \
+  -p 8000:8000 \
+  --env-file .env \
+  ghcr.io/isabelcabezasm/agent_reviewer:latest \
+  uvicorn src.web.app:app --host 0.0.0.0 --port 8000
+```
+
+Then open **http://localhost:8000** — paste any repo URL + optional PAT and get a full review.
+
 ## License
 
 MIT

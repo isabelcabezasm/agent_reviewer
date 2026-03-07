@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# ┌──────────────────────────────────────────────────────────┐
+# │  Agent Reviewer — Remote wrapper script                  │
+# │  Runs the AI reviewer via Docker without cloning the     │
+# │  reviewer repo. Just needs Docker and your .env file.    │
+# └──────────────────────────────────────────────────────────┘
+#
+# Install into any project:
+#   curl -fsSL https://raw.githubusercontent.com/isabelcabezasm/agent_reviewer/main/bin/remote-review | bash -s -- install
+#
+# Or run directly (no install):
+#   curl -fsSL https://raw.githubusercontent.com/isabelcabezasm/agent_reviewer/main/bin/remote-review | bash -s -- --staged
+#
+# Requires:
+#   - Docker
+#   - A .env file with AZURE_MODEL_API_* variables
+
+set -eo pipefail
+
+IMAGE="ghcr.io/isabelcabezasm/agent_reviewer:latest"
+SCRIPT_NAME="agent-review"
+
+# ── Install mode ─────────────────────────────────────────────
+if [ "$1" = "install" ]; then
+    TARGET="${2:-/usr/local/bin/${SCRIPT_NAME}}"
+    echo "📦 Installing Agent Reviewer to ${TARGET}..."
+
+    cat > /tmp/agent-review-install << 'WRAPPER'
+#!/usr/bin/env bash
+# Agent Reviewer — Docker-based remote wrapper
+# Installed from: https://github.com/isabelcabezasm/agent_reviewer
+
+set -eo pipefail
+IMAGE="ghcr.io/isabelcabezasm/agent_reviewer:latest"
+
+# Find .env file
+ENV_FILE=""
+if [ -f ".env" ]; then
+    ENV_FILE="$(pwd)/.env"
+elif [ -f "${HOME}/.agent_reviewer.env" ]; then
+    ENV_FILE="${HOME}/.agent_reviewer.env"
+fi
+
+if [ -z "${ENV_FILE}" ]; then
+    echo "❌ No .env file found. Create one with Azure OpenAI credentials:"
+    echo ""
+    echo "  AZURE_MODEL_API_ENDPOINT=https://your-endpoint.openai.azure.com/"
+    echo "  AZURE_MODEL_API_KEY=your-key"
+    echo "  AZURE_MODEL_API_NAME=gpt-5-pro"
+    echo "  AZURE_MODEL_API_VERSION=2024-12-01-preview"
+    echo ""
+    echo "Place it in the current directory (.env) or at ~/.agent_reviewer.env"
+    exit 1
+fi
+
+# Determine review mode and build args
+DOCKER_ARGS=()
+CLI_ARGS=()
+
+# Always mount current directory as the repo to review
+DOCKER_ARGS+=("-v" "$(pwd):/workspace" "-w" "/workspace")
+DOCKER_ARGS+=("--env-file" "${ENV_FILE}")
+
+# If reviewing the local repo, pass --repo /workspace
+HAS_REPO=false
+HAS_FILES=false
+for arg in "$@"; do
+    if [ "$arg" = "--repo" ]; then HAS_REPO=true; fi
+    if [ "$arg" = "--files" ]; then HAS_FILES=true; fi
+done
+
+CLI_ARGS+=("$@")
+
+# Default: review uncommitted changes in the mounted workspace
+if [ "$HAS_REPO" = false ] && [ "$HAS_FILES" = false ]; then
+    CLI_ARGS+=("--repo" "/workspace")
+fi
+
+# Pull latest image (silently)
+docker pull "${IMAGE}" -q > /dev/null 2>&1 || true
+
+echo "🔍 Agent Reviewer (Docker)"
+docker run --rm "${DOCKER_ARGS[@]}" "${IMAGE}" "${CLI_ARGS[@]}"
+WRAPPER
+
+    sudo mv /tmp/agent-review-install "${TARGET}"
+    sudo chmod +x "${TARGET}"
+
+    echo "✅ Installed! Run '${SCRIPT_NAME}' from any project directory."
+    echo ""
+    echo "Usage:"
+    echo "  ${SCRIPT_NAME}                          # Review uncommitted changes"
+    echo "  ${SCRIPT_NAME} --staged                  # Review staged changes"
+    echo "  ${SCRIPT_NAME} --files src/app.py        # Review specific files"
+    echo "  ${SCRIPT_NAME} --branch main             # Review vs branch"
+    exit 0
+fi
+
+# ── Direct run mode ──────────────────────────────────────────
+# When piped: curl ... | bash -s -- --staged
+
+ENV_FILE=""
+if [ -f ".env" ]; then
+    ENV_FILE="$(pwd)/.env"
+elif [ -f "${HOME}/.agent_reviewer.env" ]; then
+    ENV_FILE="${HOME}/.agent_reviewer.env"
+fi
+
+if [ -z "${ENV_FILE}" ]; then
+    echo "❌ No .env file found with Azure OpenAI credentials."
+    exit 1
+fi
+
+docker pull "${IMAGE}" -q > /dev/null 2>&1 || true
+
+echo "🔍 Agent Reviewer (Docker — one-shot)"
+docker run --rm \
+    -v "$(pwd):/workspace" \
+    -w "/workspace" \
+    --env-file "${ENV_FILE}" \
+    "${IMAGE}" \
+    --repo /workspace "$@"
