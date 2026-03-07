@@ -1,5 +1,5 @@
 [project]
-name = "isa_container"
+name = "agent_reviewer"
 version = "0.1.0"
 description = "Isa base container"
 readme = "README.md"
@@ -30,7 +30,7 @@ Repository = "https://github.com/isabelcabezasm/base_container"
 Issues = "https://github.com/isabelcabezasm/base_container"
 
 [project.scripts]
-isa_container = "src:main"
+agent_reviewer = "src:main"
 
 [build-system]
 requires = ["hatchling"]

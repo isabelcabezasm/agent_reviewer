@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# Development container setup script for isa_container project
+# Development container setup script for agent_reviewer project
 set -e
 
-echo "🚀 Setting up isa_container development environment..."
+echo "🚀 Setting up agent_reviewer development environment..."
 
 # Ensure uv is in PATH
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Install project dependencies
 echo "📦 Installing Python dependencies..."
-cd /workspaces/isa_container
+cd /workspaces/agent_reviewer
 
 # Check if uv is available, if not install it
 if ! command -v uv &> /dev/null; then
@@ -29,13 +29,13 @@ mkdir -p .vscode
 
 # Set proper permissions
 echo "🔒 Setting permissions..."
-chmod +x /workspaces/isa_container/.devcontainer/post_create.sh
-chmod +x /workspaces/developer-productivity/bin/env
-chmod +x /workspaces/developer-productivity/bin/help
-chmod +x /workspaces/developer-productivity/bin/test
-chmod +x /workspaces/developer-productivity/bin/lint/all
-chmod +x /workspaces/developer-productivity/bin/lint/py
-chmod +x /workspaces/developer-productivity/bin/lint/md
+chmod +x /workspaces/agent_reviewer/.devcontainer/post_create.sh
+chmod +x /workspaces/agent_reviewer/bin/env
+chmod +x /workspaces/agent_reviewer/bin/help
+chmod +x /workspaces/agent_reviewer/bin/test
+chmod +x /workspaces/agent_reviewer/bin/lint/all
+chmod +x /workspaces/agent_reviewer/bin/lint/py
+chmod +x /workspaces/agent_reviewer/bin/lint/md
 
 # Create a sample .env file if it doesn't exist
 if [ ! -f ".env" ]; then
