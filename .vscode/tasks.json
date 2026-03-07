@@ -1,0 +1,53 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Review: Uncommitted Changes",
+            "type": "shell",
+            "command": "uv run python -m src.main",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Review: Staged Changes",
+            "type": "shell",
+            "command": "uv run python -m src.main --staged",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Review: Current File",
+            "type": "shell",
+            "command": "uv run python -m src.main --files ${file}",
+            "group": "test",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Review: Launch Web UI",
+            "type": "shell",
+            "command": "uv run uvicorn src.web.app:app --reload --host 0.0.0.0 --port 8000",
+            "group": "test",
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

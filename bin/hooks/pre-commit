@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Pre-commit hook: AI code review on staged changes
+# Install with: bin/review-install-hook
+#
+# This hook runs Agent Reviewer on your staged changes before
+# each commit. If critical issues are found, it asks for confirmation.
+
+set -eo pipefail
+
+# Find project root (where this hook's source lives)
+AGENT_REVIEWER_DIR="${AGENT_REVIEWER_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
+
+echo ""
+echo "🔍 Agent Reviewer — Pre-commit Review"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Check if there are staged changes
+if git diff --cached --quiet; then
+    echo "✅ No staged changes to review."
+    exit 0
+fi
+
+# Run the review on staged changes
+REVIEW_OUTPUT=$(cd "$AGENT_REVIEWER_DIR" && uv run python -m src.main --staged --repo "$(pwd)" 2>&1) || true
+
+echo "$REVIEW_OUTPUT"
+echo ""
+
+# Check for critical issues in the review
+if echo "$REVIEW_OUTPUT" | grep -qi "critical"; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "⚠️  Critical issues detected in your code!"
+    echo ""
+    read -r -p "Do you still want to commit? [y/N] " response
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            echo "Proceeding with commit..."
+            ;;
+        *)
+            echo "Commit aborted. Fix the issues and try again."
+            exit 1
+            ;;
+    esac
+fi
+
+echo "✅ Review complete. Proceeding with commit."

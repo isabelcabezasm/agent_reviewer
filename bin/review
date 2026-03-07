@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#? [Dev] Review local code changes with AI before committing
+
+set -eo pipefail
+cd "$(dirname "$0")/.."
+
+usage() {
+    echo "🔍 Agent Reviewer — Local Code Review"
+    echo ""
+    echo "Usage: bin/review [OPTIONS]"
+    echo ""
+    echo "Modes (default: review all uncommitted changes):"
+    echo "  --staged           Review only staged changes (git add)"
+    echo "  --files FILE...    Review specific files"
+    echo "  --branch BRANCH    Review changes vs a branch"
+    echo "  --commit REF       Review changes from a commit"
+    echo "  --repo PATH        Review another repository"
+    echo ""
+    echo "Options:"
+    echo "  -i, --instructions TEXT   Extra instructions for the reviewer"
+    echo "  -h, --help               Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  bin/review                           # Review all uncommitted changes"
+    echo "  bin/review --staged                  # Review staged changes only"
+    echo "  bin/review --staged -i 'Focus on security'"
+    echo "  bin/review --files src/main.py src/config.py"
+    echo "  bin/review --repo /path/to/other/project"
+}
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
+echo "🔍 Agent Reviewer — Local Code Review"
+echo ""
+
+uv run python -m src.main "$@"

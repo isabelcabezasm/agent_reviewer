@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#? [Dev] Install the AI review pre-commit hook into a git repo
+#
+# Usage:
+#   bin/review-install-hook              # Install in current repo
+#   bin/review-install-hook /path/to/repo  # Install in another repo
+
+set -eo pipefail
+cd "$(dirname "$0")/.."
+
+AGENT_REVIEWER_DIR="$(pwd)"
+TARGET_REPO="${1:-.}"
+
+# Resolve absolute path
+TARGET_REPO="$(cd "$TARGET_REPO" && pwd)"
+
+if [ ! -d "$TARGET_REPO/.git" ]; then
+    echo "❌ Not a git repository: $TARGET_REPO"
+    exit 1
+fi
+
+HOOKS_DIR="$TARGET_REPO/.git/hooks"
+HOOK_FILE="$HOOKS_DIR/pre-commit"
+
+# Back up existing hook if present
+if [ -f "$HOOK_FILE" ]; then
+    echo "📋 Backing up existing pre-commit hook to $HOOK_FILE.backup"
+    cp "$HOOK_FILE" "$HOOK_FILE.backup"
+fi
+
+# Create the hook that delegates to agent_reviewer
+cat > "$HOOK_FILE" << HOOK
+#!/usr/bin/env bash
+# Agent Reviewer pre-commit hook
+# Installed by: agent_reviewer/bin/review-install-hook
+# To uninstall: rm $HOOK_FILE
+
+export AGENT_REVIEWER_DIR="$AGENT_REVIEWER_DIR"
+exec "$AGENT_REVIEWER_DIR/bin/hooks/pre-commit"
+HOOK
+
+chmod +x "$HOOK_FILE"
+
+echo "✅ Pre-commit hook installed in: $TARGET_REPO"
+echo ""
+echo "Every 'git commit' will now run an AI review on staged changes."
+echo "To uninstall: rm $HOOK_FILE"

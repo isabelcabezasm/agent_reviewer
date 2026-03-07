@@ -111,11 +111,57 @@ uv run python -m src.main --repo /path/to/other/repo --commit HEAD~1
 
 | Command | Description |
 |---|---|
+| `bin/review` | AI review of uncommitted changes |
+| `bin/review --staged` | AI review of staged changes only |
 | `bin/lint/all` | Run all linters |
 | `bin/lint/py` | Format, lint, and type-check Python files |
 | `bin/lint/md` | Lint Markdown files |
 | `bin/test` | Run all unit tests |
 | `uv run pytest tests/ -v` | Run tests with verbose output |
+
+## Local Review Tools
+
+### `bin/review` — Quick CLI
+
+Review your code before committing, right from the terminal:
+
+```bash
+bin/review                                    # All uncommitted changes
+bin/review --staged                           # Staged changes only
+bin/review --files src/main.py src/config.py  # Specific files
+bin/review --staged -i "Focus on security"    # With custom instructions
+bin/review --repo /path/to/other/project      # Another repository
+```
+
+### Git Pre-commit Hook — Auto-review on Every Commit
+
+Install the hook in any repository:
+
+```bash
+# Install in the current repo
+bin/review-install-hook
+
+# Install in another repo
+bin/review-install-hook /path/to/other/repo
+```
+
+After installation, every `git commit` automatically runs an AI review on staged changes. If **critical issues** are found, it asks for confirmation before proceeding.
+
+To uninstall, remove the hook file:
+```bash
+rm .git/hooks/pre-commit
+```
+
+### VS Code Tasks
+
+Press `Ctrl+Shift+P` → **Tasks: Run Task** and pick:
+
+| Task | Description |
+|---|---|
+| Review: Uncommitted Changes | Review all local changes |
+| Review: Staged Changes | Review only staged files |
+| Review: Current File | Review the file open in the editor |
+| Review: Launch Web UI | Start the web interface |
 
 ## Web UI
 
