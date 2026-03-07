@@ -1,0 +1,89 @@
+{
+  "name": "agent-reviewer",
+  "displayName": "Agent Reviewer",
+  "description": "AI-powered code review from your editor. Reviews files, selections, or diffs using Azure OpenAI.",
+  "version": "0.1.0",
+  "publisher": "isabelcabezasm",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isabelcabezasm/agent_reviewer"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "code review",
+    "ai",
+    "azure openai",
+    "security",
+    "quality"
+  ],
+  "icon": "icon.png",
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentReviewer.reviewFile",
+        "title": "Agent Reviewer: Review Current File"
+      },
+      {
+        "command": "agentReviewer.reviewSelection",
+        "title": "Agent Reviewer: Review Selection"
+      },
+      {
+        "command": "agentReviewer.reviewDiff",
+        "title": "Agent Reviewer: Review Uncommitted Changes"
+      }
+    ],
+    "configuration": {
+      "title": "Agent Reviewer",
+      "properties": {
+        "agentReviewer.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the Agent Reviewer API server"
+        },
+        "agentReviewer.instructions": {
+          "type": "string",
+          "default": "",
+          "description": "Default extra instructions for every review (e.g., 'Focus on security')"
+        },
+        "agentReviewer.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for authentication (required if server has AGENT_REVIEWER_API_KEY set)"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "agentReviewer.reviewFile",
+          "group": "agentReviewer"
+        },
+        {
+          "command": "agentReviewer.reviewSelection",
+          "group": "agentReviewer",
+          "when": "editorHasSelection"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}
