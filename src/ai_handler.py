@@ -1,9 +1,11 @@
 """AI handler module for Azure OpenAI API communication.
 
-Provides an async interface to send review prompts to the Azure
-OpenAI service and retrieve structured responses.
+Provides an interface to send review prompts to the Azure
+OpenAI service and retrieve structured responses. Supports
+both API key auth and Entra ID (Azure AD) token-based auth.
 """
 
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider  # type: ignore[import-untyped]
 from openai import AzureOpenAI  # type: ignore[import-untyped]
 
 from src.config import AzureModelConfig
@@ -14,6 +16,8 @@ class AIHandler:
 
     Wraps the Azure OpenAI client to provide a simple interface
     for sending system/user prompt pairs and receiving completions.
+    Uses Entra ID token auth when no API key is provided, or API
+    key auth when a key is available.
 
     Attributes:
         client: The Azure OpenAI client instance.
@@ -23,15 +27,33 @@ class AIHandler:
     def __init__(self, config: AzureModelConfig) -> None:
         """Initialize the AI handler with Azure OpenAI credentials.
 
+        If the API key is set to a non-empty value, uses API key auth.
+        Otherwise, falls back to Entra ID token-based auth via
+        DefaultAzureCredential (supports managed identity, az login, etc.)
+
         Parameters:
             config: Azure model configuration containing
                 endpoint, API key, model name, and API version.
         """
-        self.client: AzureOpenAI = AzureOpenAI(
-            azure_endpoint=config.endpoint,
-            api_key=config.api_key,
-            api_version=config.api_version,
-        )
+        if config.api_key:
+            # API key authentication
+            self.client: AzureOpenAI = AzureOpenAI(
+                azure_endpoint=config.endpoint,
+                api_key=config.api_key,
+                api_version=config.api_version,
+            )
+        else:
+            # Entra ID / Azure AD token-based authentication
+            credential = DefaultAzureCredential()
+            token_provider = get_bearer_token_provider(  # pyright: ignore[reportUnknownVariableType]
+                credential,
+                "https://cognitiveservices.azure.com/.default",
+            )
+            self.client = AzureOpenAI(
+                azure_endpoint=config.endpoint,
+                azure_ad_token_provider=token_provider,  # pyright: ignore[reportUnknownArgumentType]
+                api_version=config.api_version,
+            )
         self.model_name = config.model_name
 
     def chat_completion(

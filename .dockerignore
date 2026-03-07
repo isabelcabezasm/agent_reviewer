@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+.pytest_cache
+.ruff_cache
+.mypy_cache
+vscode-extension/node_modules
+vscode-extension/out
+vscode-extension/*.vsix
+tests/
+_build.log
+_debug.json
+_health.txt

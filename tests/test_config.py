@@ -100,11 +100,11 @@ class TestLoadConfig:
         {
             "AZURE_MODEL_API_ENDPOINT": "https://test.openai.azure.com/",
             "AZURE_MODEL_API_KEY": "",
-            "AZURE_MODEL_API_NAME": "gpt-5-pro",
+            "AZURE_MODEL_API_NAME": "",
             "AZURE_MODEL_API_VERSION": "2024-12-01-preview",
         },
     )
     def test_raises_with_partial_missing_variables(self) -> None:
         """Test that error message lists specific missing variables."""
-        with pytest.raises(ValueError, match="AZURE_MODEL_API_KEY"):
+        with pytest.raises(ValueError, match="AZURE_MODEL_API_NAME"):
             _ = load_config()

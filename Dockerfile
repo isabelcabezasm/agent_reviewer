@@ -4,6 +4,9 @@
 # ── Stage 1: Builder ─────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
+# Cache-bust: update this to force rebuild
+ARG BUILD_DATE=unknown
+
 WORKDIR /app
 
 # Install uv for fast dependency resolution

@@ -88,12 +88,10 @@ def load_config(env_path: str | None = None) -> AppConfig:
     model_name = os.getenv("AZURE_MODEL_API_NAME", "")
     api_version = os.getenv("AZURE_MODEL_API_VERSION", "")
 
-    if not all([endpoint, api_key, model_name, api_version]):
+    if not all([endpoint, model_name, api_version]):
         missing: list[str] = []
         if not endpoint:
             missing.append("AZURE_MODEL_API_ENDPOINT")
-        if not api_key:
-            missing.append("AZURE_MODEL_API_KEY")
         if not model_name:
             missing.append("AZURE_MODEL_API_NAME")
         if not api_version:

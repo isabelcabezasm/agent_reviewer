@@ -62,10 +62,11 @@ def _constant_time_compare(a: str, b: str) -> bool:
 
 
 async def verify_api_key(
+    request: Request,
     header_key: Annotated[str | None, Depends(_api_key_header)] = None,
     query_key: Annotated[str | None, Depends(_api_key_query)] = None,
 ) -> str | None:
-    """Validate the API key from header or query parameter.
+    """Validate the API key from header, query parameter, or session cookie.
 
     If authentication is disabled (no AGENT_REVIEWER_API_KEY set),
     all requests are allowed through.
@@ -73,8 +74,10 @@ async def verify_api_key(
     The key can be provided via:
     - Header: X-API-Key: <key>
     - Query: ?api_key=<key>
+    - Session cookie (set by the Web UI login page)
 
     Parameters:
+        request: The incoming HTTP request (for cookie access).
         header_key: API key from X-API-Key header.
         query_key: API key from api_key query parameter.
 
@@ -90,19 +93,26 @@ async def verify_api_key(
     if not expected_key:
         return None
 
+    # Check API key from header or query
     provided_key = header_key or query_key
+    if provided_key and _constant_time_compare(provided_key, expected_key):
+        return provided_key
 
-    if not provided_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key. Provide via X-API-Key header or api_key query parameter.",
-        )
+    # Also accept a valid session cookie (for Web UI)
+    session_token = request.cookies.get("session_token", "")
+    if session_token and validate_session(session_token):
+        return None
 
-    if not _constant_time_compare(provided_key, expected_key):
+    if provided_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key.",
         )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing API key. Provide via X-API-Key header or api_key query parameter.",
+    )
 
     return provided_key
 

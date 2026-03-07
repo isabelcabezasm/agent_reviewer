@@ -44,8 +44,8 @@ fi
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 
-# Validate required variables
-for var in AZURE_MODEL_API_ENDPOINT AZURE_MODEL_API_KEY AZURE_MODEL_API_NAME AZURE_MODEL_API_VERSION; do
+# Validate required variables (API key is optional — uses Entra ID if empty)
+for var in AZURE_MODEL_API_ENDPOINT AZURE_MODEL_API_NAME AZURE_MODEL_API_VERSION; do
     if [ -z "${!var}" ]; then
         echo "❌ Missing required variable: $var"
         exit 1
@@ -127,6 +127,7 @@ az acr build \
     --registry "$ACR_NAME" \
     --resource-group "$RESOURCE_GROUP" \
     --image "${IMAGE_NAME}:${IMAGE_TAG}" \
+    --build-arg "BUILD_DATE=$(date -u +%Y%m%d%H%M%S)" \
     --file Dockerfile \
     . 2>&1 | tail -5
 
@@ -199,6 +200,41 @@ else
             "AGENT_REVIEWER_API_KEY=${AGENT_REVIEWER_API_KEY:-}" \
         -o none
     ok "Container App created"
+fi
+
+# ── Step 6b: Enable Managed Identity & RBAC ─────────────────────
+log "Step 6b: Managed Identity & RBAC"
+
+info "Enabling system-assigned managed identity..."
+PRINCIPAL_ID=$(az containerapp identity assign \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --system-assigned \
+    --query principalId -o tsv 2>/dev/null || true)
+
+if [ -n "$PRINCIPAL_ID" ]; then
+    ok "Managed identity enabled (principal: ${PRINCIPAL_ID})"
+
+    # Get the Azure AI resource ID
+    AI_RESOURCE_ID=$(az cognitiveservices account show \
+        --name "$(echo "$AZURE_MODEL_API_ENDPOINT" | sed 's|https://||;s|\..*||')" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query id -o tsv 2>/dev/null || true)
+
+    if [ -n "$AI_RESOURCE_ID" ]; then
+        info "Assigning Cognitive Services OpenAI User role..."
+        az role assignment create \
+            --role "Cognitive Services OpenAI User" \
+            --assignee-object-id "$PRINCIPAL_ID" \
+            --assignee-principal-type ServicePrincipal \
+            --scope "$AI_RESOURCE_ID" \
+            -o none 2>/dev/null || true
+        ok "RBAC role assigned"
+    else
+        info "Could not find AI resource for RBAC — skipping (use API key auth instead)"
+    fi
+else
+    info "Managed identity could not be assigned — skipping"
 fi
 
 # ── Step 7: Get the URL ─────────────────────────────────────────
