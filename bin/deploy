@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# ┌──────────────────────────────────────────────────────────────┐
+# │  Deploy Agent Reviewer API to Azure Container Apps           │
+# │  Resource Group: my-tests                                    │
+# └──────────────────────────────────────────────────────────────┘
+#
+# Prerequisites:
+#   - Azure CLI (az) logged in
+#   - Docker (for building the image)
+#   - A .env file with AZURE_MODEL_API_* variables
+#
+# Usage:
+#   bin/deploy              # Full deploy (build + push + create/update)
+#   bin/deploy --update     # Update existing app only (skip infra setup)
+#   bin/deploy --destroy    # Tear down the Container App
+
+set -eo pipefail
+cd "$(dirname "$0")/.."
+
+# ── Configuration ────────────────────────────────────────────────
+RESOURCE_GROUP="my-tests"
+LOCATION="switzerlandnorth"
+APP_NAME="agent-reviewer"
+ENVIRONMENT_NAME="agent-reviewer-env"
+ACR_NAME="agentrevieweracr"
+IMAGE_NAME="agent-reviewer"
+IMAGE_TAG="latest"
+FULL_IMAGE="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+
+# Container settings
+CPU="0.5"
+MEMORY="1.0Gi"
+MIN_REPLICAS=0
+MAX_REPLICAS=3
+TARGET_PORT=8000
+
+# ── Load environment variables ───────────────────────────────────
+ENV_FILE=".env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "❌ .env file not found. Copy .env.template and fill in your Azure OpenAI credentials."
+    exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+# Validate required variables
+for var in AZURE_MODEL_API_ENDPOINT AZURE_MODEL_API_KEY AZURE_MODEL_API_NAME AZURE_MODEL_API_VERSION; do
+    if [ -z "${!var}" ]; then
+        echo "❌ Missing required variable: $var"
+        exit 1
+    fi
+done
+
+# ── Helper functions ─────────────────────────────────────────────
+log()  { echo ""; echo "══════════════════════════════════════════"; echo "  $1"; echo "══════════════════════════════════════════"; }
+info() { echo "  ℹ️  $1"; }
+ok()   { echo "  ✅ $1"; }
+
+# ── Destroy mode ─────────────────────────────────────────────────
+if [ "${1}" = "--destroy" ]; then
+    log "Destroying Agent Reviewer Container App"
+    
+    info "Deleting Container App: ${APP_NAME}..."
+    az containerapp delete \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --yes 2>/dev/null || true
+
+    info "Deleting Container Apps Environment: ${ENVIRONMENT_NAME}..."
+    az containerapp env delete \
+        --name "$ENVIRONMENT_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --yes 2>/dev/null || true
+
+    ok "Cleanup complete. ACR and Resource Group were preserved."
+    echo "  To also delete ACR: az acr delete --name $ACR_NAME --resource-group $RESOURCE_GROUP --yes"
+    exit 0
+fi
+
+# ── Pre-flight checks ───────────────────────────────────────────
+log "Pre-flight checks"
+
+info "Checking Azure CLI login..."
+az account show > /dev/null 2>&1 || {
+    echo "❌ Not logged in to Azure CLI. Run: az login"
+    exit 1
+}
+
+SUBSCRIPTION=$(az account show --query name -o tsv)
+ok "Logged in to Azure (subscription: ${SUBSCRIPTION})"
+
+# ── Step 1: Ensure Resource Group ────────────────────────────────
+log "Step 1: Resource Group"
+
+if az group show --name "$RESOURCE_GROUP" > /dev/null 2>&1; then
+    ok "Resource group '${RESOURCE_GROUP}' already exists"
+else
+    info "Creating resource group '${RESOURCE_GROUP}' in ${LOCATION}..."
+    az group create --name "$RESOURCE_GROUP" --location "$LOCATION" -o none
+    ok "Resource group created"
+fi
+
+# ── Step 2: Container Registry ───────────────────────────────────
+if [ "${1}" != "--update" ]; then
+    log "Step 2: Azure Container Registry"
+
+    if az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" > /dev/null 2>&1; then
+        ok "ACR '${ACR_NAME}' already exists"
+    else
+        info "Creating Azure Container Registry '${ACR_NAME}'..."
+        az acr create \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --sku Basic \
+            --admin-enabled true \
+            -o none
+        ok "ACR created"
+    fi
+fi
+
+# ── Step 3: Build & Push Docker Image ────────────────────────────
+log "Step 3: Build & Push Docker Image"
+
+info "Building image with ACR Build (cloud build)..."
+az acr build \
+    --registry "$ACR_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --image "${IMAGE_NAME}:${IMAGE_TAG}" \
+    --file Dockerfile \
+    . 2>&1 | tail -5
+
+ok "Image pushed to ${FULL_IMAGE}"
+
+# ── Step 4: Container Apps Environment ───────────────────────────
+if [ "${1}" != "--update" ]; then
+    log "Step 4: Container Apps Environment"
+
+    if az containerapp env show --name "$ENVIRONMENT_NAME" --resource-group "$RESOURCE_GROUP" > /dev/null 2>&1; then
+        ok "Environment '${ENVIRONMENT_NAME}' already exists"
+    else
+        info "Creating Container Apps environment..."
+        az containerapp env create \
+            --name "$ENVIRONMENT_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            -o none
+        ok "Environment created"
+    fi
+fi
+
+# ── Step 5: Get ACR credentials ─────────────────────────────────
+log "Step 5: ACR Credentials"
+
+ACR_USERNAME=$(az acr credential show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query username -o tsv)
+ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query "passwords[0].value" -o tsv)
+ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query loginServer -o tsv)
+
+ok "ACR credentials retrieved"
+
+# ── Step 6: Deploy / Update Container App ────────────────────────
+log "Step 6: Deploy Container App"
+
+if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" > /dev/null 2>&1; then
+    info "Updating existing Container App '${APP_NAME}'..."
+    az containerapp update \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --image "$FULL_IMAGE" \
+        --set-env-vars \
+            "AZURE_MODEL_API_ENDPOINT=${AZURE_MODEL_API_ENDPOINT}" \
+            "AZURE_MODEL_API_KEY=${AZURE_MODEL_API_KEY}" \
+            "AZURE_MODEL_API_NAME=${AZURE_MODEL_API_NAME}" \
+            "AZURE_MODEL_API_VERSION=${AZURE_MODEL_API_VERSION}" \
+            "AGENT_REVIEWER_API_KEY=${AGENT_REVIEWER_API_KEY:-}" \
+        -o none
+    ok "Container App updated"
+else
+    info "Creating Container App '${APP_NAME}'..."
+    az containerapp create \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --environment "$ENVIRONMENT_NAME" \
+        --image "$FULL_IMAGE" \
+        --registry-server "$ACR_LOGIN_SERVER" \
+        --registry-username "$ACR_USERNAME" \
+        --registry-password "$ACR_PASSWORD" \
+        --target-port "$TARGET_PORT" \
+        --ingress external \
+        --cpu "$CPU" \
+        --memory "$MEMORY" \
+        --min-replicas "$MIN_REPLICAS" \
+        --max-replicas "$MAX_REPLICAS" \
+        --env-vars \
+            "AZURE_MODEL_API_ENDPOINT=${AZURE_MODEL_API_ENDPOINT}" \
+            "AZURE_MODEL_API_KEY=${AZURE_MODEL_API_KEY}" \
+            "AZURE_MODEL_API_NAME=${AZURE_MODEL_API_NAME}" \
+            "AZURE_MODEL_API_VERSION=${AZURE_MODEL_API_VERSION}" \
+            "AGENT_REVIEWER_API_KEY=${AGENT_REVIEWER_API_KEY:-}" \
+        -o none
+    ok "Container App created"
+fi
+
+# ── Step 7: Get the URL ─────────────────────────────────────────
+log "Step 7: Deployment Complete!"
+
+APP_URL=$(az containerapp show \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "properties.configuration.ingress.fqdn" -o tsv)
+
+echo ""
+echo "  🚀 Agent Reviewer API is live!"
+echo ""
+echo "  ┌─────────────────────────────────────────────────────────────┐"
+echo "  │  URL: https://${APP_URL}                                    "
+echo "  │                                                             "
+echo "  │  Web UI:    https://${APP_URL}                              "
+echo "  │  API Docs:  https://${APP_URL}/docs                        "
+echo "  │  Health:    https://${APP_URL}/api/health                   "
+echo "  │                                                             "
+echo "  │  VS Code extension setting:                                 "
+echo "  │    agentReviewer.apiUrl = https://${APP_URL}                "
+echo "  └─────────────────────────────────────────────────────────────┘"
+echo ""
+echo "  To update after code changes:  bin/deploy --update"
+echo "  To tear down:                  bin/deploy --destroy"
+echo ""

@@ -490,6 +490,8 @@
     </svg>
     <h1>Agent Reviewer</h1>
     <span class="badge">AI-Powered</span>
+    <div style="flex:1"></div>
+    <button onclick="handleLogout()" style="background:none;border:1px solid #30363d;color:#8b949e;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;" onmouseover="this.style.borderColor='#f85149';this.style.color='#f85149'" onmouseout="this.style.borderColor='#30363d';this.style.color='#8b949e'">Logout</button>
 </div>
 
 <div class="container">
@@ -785,6 +787,15 @@
 
     function toggleRaw() {
         document.getElementById('rawOutput').classList.toggle('visible');
+    }
+
+    async function handleLogout() {
+        try {
+            await fetch('/auth/logout', { method: 'POST' });
+        } catch (e) {
+            // ignore
+        }
+        window.location.href = '/login';
     }
 </script>
 

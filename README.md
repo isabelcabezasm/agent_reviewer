@@ -66,6 +66,35 @@ src/
    | `AZURE_MODEL_API_KEY` | Azure OpenAI API key |
    | `AZURE_MODEL_API_NAME` | Deployed model name (e.g., `gpt-5-pro`) |
    | `AZURE_MODEL_API_VERSION` | API version (e.g., `2024-12-01-preview`) |
+   | `AGENT_REVIEWER_API_KEY` | API key for authentication (leave empty to disable) |
+
+## Authentication
+
+Authentication is controlled by the `AGENT_REVIEWER_API_KEY` environment variable:
+
+- **Set it** → all API endpoints and the Web UI require authentication
+- **Leave it empty** → authentication is disabled (open access)
+
+### Web UI
+When auth is enabled, the Web UI shows a **login page** where users enter the API key. A secure session cookie is set for 24 hours.
+
+### REST API
+API clients authenticate via the `X-API-Key` header:
+```bash
+curl -X POST https://your-api/api/review/code \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"code": "def hello(): pass"}'
+```
+
+Or via query parameter: `?api_key=your-api-key`
+
+### VS Code Extension
+Set the API key in VS Code Settings:
+- `agentReviewer.apiKey` — your API key (sent as `X-API-Key` header)
+
+### Health Endpoint
+`/api/health` is always public (no auth required) for monitoring and probes.
 
 ### Usage
 
@@ -187,26 +216,81 @@ Then open **http://localhost:8000** in your browser.
 
 ### REST API
 
-The web app also exposes a REST API:
+The web app exposes a REST API with three endpoints:
 
 ```bash
-# Review a public repo
+# Review a GitHub repo (clones it server-side)
 curl -X POST http://localhost:8000/api/review \
   -H "Content-Type: application/json" \
   -d '{"repo_url": "https://github.com/owner/repo"}'
 
-# Review a private repo
-curl -X POST http://localhost:8000/api/review \
+# Review raw code directly (used by VS Code extension)
+curl -X POST http://localhost:8000/api/review/code \
   -H "Content-Type: application/json" \
   -d '{
-    "repo_url": "https://github.com/owner/private-repo",
-    "github_pat": "ghp_xxxxxxxxxxxx",
-    "instructions": "Focus on security and error handling"
+    "code": "def hello(): return 42",
+    "language": "python",
+    "filename": "app.py",
+    "instructions": "Check for type hints"
+  }'
+
+# Review a git diff directly (used by pre-commit hooks)
+curl -X POST http://localhost:8000/api/review/diff \
+  -H "Content-Type: application/json" \
+  -d '{
+    "diff": "+new line\n-old line",
+    "instructions": "Focus on security"
   }'
 
 # Health check
 curl http://localhost:8000/api/health
 ```
+
+| Endpoint | Input | Use Case |
+|---|---|---|
+| `POST /api/review` | Repo URL + optional PAT | Web UI, CI pipelines |
+| `POST /api/review/code` | Raw source code | VS Code extension, editor plugins |
+| `POST /api/review/diff` | Git diff text | Pre-commit hooks, CI pipelines |
+| `GET /api/health` | — | Monitoring |
+
+## VS Code Extension
+
+A VS Code extension that calls the published API to review code directly from your editor, with results shown in a Markdown panel.
+
+### Setup
+
+1. **Start the API** (locally or on Azure):
+   ```bash
+   # Local
+   uv run uvicorn src.web.app:app --reload --host 0.0.0.0 --port 8000
+
+   # Or with Docker (no source code needed)
+   docker run -d -p 8000:8000 --env-file .env \
+     ghcr.io/isabelcabezasm/agent_reviewer:latest \
+     uvicorn src.web.app:app --host 0.0.0.0 --port 8000
+   ```
+
+2. **Install the extension**:
+   ```bash
+   cd vscode-extension
+   npm install && npm run compile
+   npx vsce package
+   code --install-extension agent-reviewer-0.1.0.vsix
+   ```
+
+3. **Configure** (VS Code Settings):
+   - `agentReviewer.apiUrl` — API URL (default: `http://localhost:8000`)
+   - `agentReviewer.instructions` — Default review instructions
+
+### Commands
+
+| Command | What It Does |
+|---|---|
+| **Agent Reviewer: Review Current File** | Sends the full file to the API |
+| **Agent Reviewer: Review Selection** | Sends only selected code |
+| **Agent Reviewer: Review Uncommitted Changes** | Sends git diff to the API |
+
+All commands are also in the **right-click context menu**.
 
 ## Use from Any Project (Without Cloning This Repo)
 
@@ -290,6 +374,26 @@ docker run -d \
 ```
 
 Then open **http://localhost:8000** — paste any repo URL + optional PAT and get a full review.
+
+## Deploy to Azure
+
+Deploy the API as an Azure Container App with a single command:
+
+```bash
+bin/deploy           # Full deploy (build + push + create Container App)
+bin/deploy --update  # Update after code changes (rebuild image only)
+bin/deploy --destroy # Tear down the Container App
+```
+
+This creates:
+- An **Azure Container Registry** (`agentrevieweracr`) in resource group `my-tests`
+- A **Container Apps Environment** with a public HTTPS endpoint
+- A **Container App** running the API (scales to 0 when idle)
+
+After deploy, the script prints the URL. Set it in the VS Code extension:
+```
+agentReviewer.apiUrl = https://agent-reviewer.<region>.azurecontainerapps.io
+```
 
 ## License
 

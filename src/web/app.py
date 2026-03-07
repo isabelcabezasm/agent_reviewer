@@ -1,16 +1,19 @@
 """FastAPI web application for the Agent Reviewer.
 
 Provides a web UI and REST API to review GitHub repositories
-(including private ones) using Azure OpenAI.
+(including private ones) and raw code/diffs using Azure OpenAI.
+Designed to be called from VS Code extensions, CI pipelines,
+or any HTTP client.
 """
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import yaml  # type: ignore[import-untyped]
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles  # pyright: ignore[reportUnknownVariableType]
 from pydantic import BaseModel, Field
 
@@ -19,6 +22,15 @@ from src.diff_utils import detect_language, read_files
 from src.github_utils import cleanup_repo, clone_repo, get_default_branch_diff, get_repo_files
 from src.prompts import build_system_prompt, build_user_prompt_diff, build_user_prompt_files
 from src.ai_handler import AIHandler
+from src.web.auth import (
+    create_session,
+    get_api_key,
+    invalidate_session,
+    is_auth_enabled,
+    validate_session,
+    verify_api_key,
+    verify_web_session,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +75,39 @@ class ReviewResponse(BaseModel):
     repo_url: str = ""
 
 
+class CodeReviewRequest(BaseModel):
+    """Request body for the /api/review/code endpoint.
+
+    Lightweight endpoint — send code directly without a repo URL.
+    Designed for VS Code extensions and other editor integrations.
+
+    Attributes:
+        code: The source code to review.
+        language: Programming language (e.g., 'Python', 'TypeScript').
+        filename: Optional filename for context.
+        instructions: Extra review instructions for the AI.
+    """
+
+    code: str
+    language: str = "auto-detect"
+    filename: str = ""
+    instructions: str = ""
+
+
+class DiffReviewRequest(BaseModel):
+    """Request body for the /api/review/diff endpoint.
+
+    Send a git diff directly for review.
+
+    Attributes:
+        diff: The unified diff text.
+        instructions: Extra review instructions for the AI.
+    """
+
+    diff: str
+    instructions: str = ""
+
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
@@ -71,6 +116,15 @@ app = FastAPI(
     title="Agent Reviewer",
     description="AI-powered code review web service",
     version="0.1.0",
+)
+
+# CORS — allow VS Code extensions and other clients to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Serve static files (HTML/CSS/JS)
@@ -86,14 +140,75 @@ app.mount(
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get("/")
-def serve_ui() -> FileResponse:
-    """Serve the main web UI."""
+@app.get("/", response_model=None)
+def serve_ui(request: Request) -> FileResponse | RedirectResponse:
+    """Serve the main web UI or redirect to login."""
+    if is_auth_enabled():
+        token = request.cookies.get("session_token", "")
+        if not validate_session(token):
+            return RedirectResponse(url="/login")
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 
+@app.get("/login", response_model=None)
+def serve_login() -> FileResponse | RedirectResponse:
+    """Serve the login page, or redirect to UI if auth is disabled."""
+    if not is_auth_enabled():
+        return RedirectResponse(url="/")
+    return FileResponse(str(STATIC_DIR / "login.html"))
+
+
+class LoginRequest(BaseModel):
+    """Login request body.
+
+    Attributes:
+        api_key: The API key to authenticate with.
+    """
+
+    api_key: str
+
+
+@app.post("/auth/login")
+def login(body: LoginRequest) -> JSONResponse:
+    """Authenticate with API key and set session cookie."""
+    import hmac as _hmac
+
+    expected = get_api_key()
+    if not expected:
+        return JSONResponse({"error": "Auth not configured"}, status_code=500)
+
+    if not _hmac.compare_digest(body.api_key.encode(), expected.encode()):
+        return JSONResponse({"error": "Invalid API key"}, status_code=401)
+
+    token = create_session()
+    response = JSONResponse({"status": "ok"})
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=86400,  # 24 hours
+    )
+    return response
+
+
+@app.post("/auth/logout")
+def logout(request: Request) -> JSONResponse:
+    """Invalidate session and clear cookie."""
+    token = request.cookies.get("session_token", "")
+    if token:
+        invalidate_session(token)
+    response = JSONResponse({"status": "logged_out"})
+    response.delete_cookie("session_token")
+    return response
+
+
 @app.post("/api/review", response_model=ReviewResponse)
-def review_repo(request: ReviewRequest) -> ReviewResponse:
+def review_repo(
+    request: ReviewRequest,
+    _key: Annotated[str | None, Depends(verify_api_key)] = None,
+) -> ReviewResponse:
     """Review a GitHub repository.
 
     Clones the repository, collects code based on the selected mode,
@@ -183,6 +298,112 @@ def review_repo(request: ReviewRequest) -> ReviewResponse:
 def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Lightweight endpoints for VS Code / editor integrations
+# ---------------------------------------------------------------------------
+
+@app.post("/api/review/code", response_model=ReviewResponse)
+def review_code(
+    request: CodeReviewRequest,
+    _key: Annotated[str | None, Depends(verify_api_key)] = None,
+) -> ReviewResponse:
+    """Review raw source code directly.
+
+    Lightweight endpoint designed for VS Code extensions and
+    other editor integrations. No repo cloning needed — just send
+    the code as a string.
+
+    Parameters:
+        request: The code review request with source code,
+            language, and optional instructions.
+
+    Returns:
+        ReviewResponse: The AI review with raw and parsed output.
+    """
+    if not request.code.strip():
+        raise HTTPException(status_code=400, detail="No code provided.")
+
+    try:
+        config = load_config()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Server config error: {e}") from e
+
+    if request.instructions:
+        review_cfg = ReviewConfig(extra_instructions=request.instructions)
+        config = AppConfig(azure=config.azure, review=review_cfg)
+
+    ai = AIHandler(config.azure)
+
+    # Build the code with line numbers and file header
+    lines = request.code.splitlines()
+    numbered = "\n".join(f"{i:4d} {line}" for i, line in enumerate(lines, 1))
+    header = f"## File: '{request.filename}'" if request.filename else "## Code"
+    formatted_code = f"{header}\n{numbered}"
+
+    system_prompt = build_system_prompt(
+        extra_instructions=config.review.extra_instructions,
+    )
+    user_prompt = build_user_prompt_files(
+        code=formatted_code,
+        language=request.language,
+    )
+
+    try:
+        review_text = ai.chat_completion(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+        parsed = _parse_review_yaml(review_text)
+
+        return ReviewResponse(
+            raw_review=review_text,
+            parsed_review=parsed,
+            files_reviewed=1,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Review failed: {e}") from e
+
+
+@app.post("/api/review/diff", response_model=ReviewResponse)
+def review_diff(
+    request: DiffReviewRequest,
+    _key: Annotated[str | None, Depends(verify_api_key)] = None,
+) -> ReviewResponse:
+    """Review a git diff directly.
+
+    Send a unified diff and get back a structured review.
+    Ideal for pre-commit hooks and CI pipelines.
+
+    Parameters:
+        request: The diff review request.
+
+    Returns:
+        ReviewResponse: The AI review with raw and parsed output.
+    """
+    if not request.diff.strip():
+        raise HTTPException(status_code=400, detail="No diff provided.")
+
+    try:
+        config = load_config()
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Server config error: {e}") from e
+
+    if request.instructions:
+        review_cfg = ReviewConfig(extra_instructions=request.instructions)
+        config = AppConfig(azure=config.azure, review=review_cfg)
+
+    try:
+        review_text = _review_with_diff(config, request.diff)
+        parsed = _parse_review_yaml(review_text)
+
+        return ReviewResponse(
+            raw_review=review_text,
+            parsed_review=parsed,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Review failed: {e}") from e
 
 
 # ---------------------------------------------------------------------------

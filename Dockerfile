@@ -43,8 +43,9 @@ COPY --from=builder /app/.env.template /app/.env.template
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
-# Default: run the CLI (can be overridden)
-ENTRYPOINT ["python", "-m", "src.main"]
+# No ENTRYPOINT — use CMD so it can be overridden by Container Apps
+# Default: run the web API server
+CMD ["uvicorn", "src.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Health check for web mode
 HEALTHCHECK --interval=30s --timeout=5s \
