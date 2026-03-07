@@ -8,20 +8,20 @@ or any HTTP client.
 
 import re
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles  # pyright: ignore[reportUnknownVariableType]
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from src.ai_handler import AIHandler
 from src.config import AppConfig, ReviewConfig, load_config
 from src.diff_utils import detect_language, read_files
 from src.github_utils import cleanup_repo, clone_repo, get_default_branch_diff, get_repo_files
 from src.prompts import build_system_prompt, build_user_prompt_diff, build_user_prompt_files
-from src.ai_handler import AIHandler
 from src.web.auth import (
     create_session,
     get_api_key,
@@ -29,13 +29,12 @@ from src.web.auth import (
     is_auth_enabled,
     validate_session,
     verify_api_key,
-    verify_web_session,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pydantic models for the API
 # ---------------------------------------------------------------------------
+
 
 class ReviewRequest(BaseModel):
     """Request body for the /api/review endpoint.
@@ -131,7 +130,7 @@ app.add_middleware(
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount(
     "/static",
-    StaticFiles(directory=str(STATIC_DIR)),  # pyright: ignore[reportUnknownArgumentType]
+    StaticFiles(directory=str(STATIC_DIR)),
     name="static",
 )
 
@@ -139,6 +138,7 @@ app.mount(
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.get("/", response_model=None)
 def serve_ui(request: Request) -> FileResponse | RedirectResponse:
@@ -304,6 +304,7 @@ def health_check() -> dict[str, str]:
 # Lightweight endpoints for VS Code / editor integrations
 # ---------------------------------------------------------------------------
 
+
 @app.post("/api/review/code", response_model=ReviewResponse)
 def review_code(
     request: CodeReviewRequest,
@@ -410,6 +411,7 @@ def review_diff(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _review_with_diff(config: AppConfig, diff: str) -> str:
     """Send a diff to the AI for review.
 
@@ -486,10 +488,10 @@ def _parse_review_yaml(raw_text: str) -> dict[str, Any] | None:
     yaml_text = yaml_match.group(1) if yaml_match else raw_text
 
     try:
-        data: dict[str, Any] = yaml.safe_load(yaml_text)  # pyright: ignore[reportUnknownMemberType]
-        if isinstance(data, dict):
-            # Flatten if wrapped in 'review' key
-            return data.get("review", data)
-        return None
-    except yaml.YAMLError:  # pyright: ignore[reportUnknownMemberType]
+        parsed_data: object = yaml.safe_load(yaml_text)
+        if not isinstance(parsed_data, dict):
+            return None
+        data = cast(dict[str, Any], parsed_data)
+        return data.get("review", data)
+    except yaml.YAMLError:
         return None

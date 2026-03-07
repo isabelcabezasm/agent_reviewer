@@ -101,8 +101,7 @@ def build_system_prompt(extra_instructions: str = "") -> str:
     extra_section = ""
     if extra_instructions:
         extra_section = (
-            f"\nExtra instructions from the user:\n"
-            f"======\n{extra_instructions}\n======\n"
+            f"\nExtra instructions from the user:\n======\n{extra_instructions}\n======\n"
         )
     return SYSTEM_PROMPT.format(extra_instructions=extra_section)
 

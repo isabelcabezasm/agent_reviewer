@@ -50,24 +50,24 @@ def create_parser() -> argparse.ArgumentParser:
 
     # Review mode (mutually exclusive)
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument(
+    _ = mode.add_argument(
         "--staged",
         action="store_true",
         help="Review only staged (git add) changes.",
     )
-    mode.add_argument(
+    _ = mode.add_argument(
         "--files",
         nargs="+",
         metavar="FILE",
         help="Review specific files by their full contents.",
     )
-    mode.add_argument(
+    _ = mode.add_argument(
         "--branch",
         type=str,
         metavar="BRANCH",
         help="Review changes compared to a target branch (e.g., main).",
     )
-    mode.add_argument(
+    _ = mode.add_argument(
         "--commit",
         type=str,
         metavar="COMMIT",
@@ -75,20 +75,20 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # Options
-    parser.add_argument(
+    _ = parser.add_argument(
         "--repo",
         type=str,
         default=None,
         metavar="PATH",
         help="Path to another repository to review (for git-based modes).",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--instructions",
         type=str,
         default="",
         help="Extra review instructions for the AI model.",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--env",
         type=str,
         default=None,
@@ -161,4 +161,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

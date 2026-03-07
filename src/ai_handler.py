@@ -5,8 +5,11 @@ OpenAI service and retrieve structured responses. Supports
 both API key auth and Entra ID (Azure AD) token-based auth.
 """
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider  # type: ignore[import-untyped]
-from openai import AzureOpenAI  # type: ignore[import-untyped]
+from azure.identity import (
+    DefaultAzureCredential,
+    get_bearer_token_provider,
+)
+from openai import AzureOpenAI
 
 from src.config import AzureModelConfig
 
@@ -45,13 +48,13 @@ class AIHandler:
         else:
             # Entra ID / Azure AD token-based authentication
             credential = DefaultAzureCredential()
-            token_provider = get_bearer_token_provider(  # pyright: ignore[reportUnknownVariableType]
+            token_provider = get_bearer_token_provider(
                 credential,
                 "https://cognitiveservices.azure.com/.default",
             )
             self.client = AzureOpenAI(
                 azure_endpoint=config.endpoint,
-                azure_ad_token_provider=token_provider,  # pyright: ignore[reportUnknownArgumentType]
+                azure_ad_token_provider=token_provider,
                 api_version=config.api_version,
             )
         self.model_name = config.model_name
@@ -77,7 +80,7 @@ class AIHandler:
         Raises:
             openai.APIError: If the API request fails.
         """
-        response = self.client.chat.completions.create(  # pyright: ignore[reportUnknownMemberType]
+        response = self.client.chat.completions.create(
             model=self.model_name,
             temperature=temperature,
             messages=[
@@ -85,7 +88,5 @@ class AIHandler:
                 {"role": "user", "content": user_prompt},
             ],
         )
-        result: str = str(
-            response.choices[0].message.content  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-        )
+        result: str = str(response.choices[0].message.content)
         return result

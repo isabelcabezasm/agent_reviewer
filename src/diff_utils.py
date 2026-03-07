@@ -134,9 +134,7 @@ def read_files(file_paths: list[str]) -> str:
             numbered_lines.append(f"{i:4d} {line}")
         numbered_content = "\n".join(numbered_lines)
 
-        sections.append(
-            f"## File: '{file_path}'\n{numbered_content}"
-        )
+        sections.append(f"## File: '{file_path}'\n{numbered_content}")
     return "\n\n".join(sections)
 
 

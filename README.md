@@ -1,10 +1,13 @@
 # Agent Reviewer
 
-An AI-powered local code review agent inspired by [qodo-ai/pr-agent](https://github.com/qodo-ai/pr-agent). Reviews your code directly from the command line using Azure OpenAI (`gpt-5-pro`), **without needing to create a Pull Request**.
+An AI-powered local code review agent inspired by
+[qodo-ai/pr-agent](https://github.com/qodo-ai/pr-agent). Reviews your code directly from the
+command line using Azure OpenAI (`gpt-5-pro`), **without needing to create a Pull Request**.
 
 ## Purpose
 
-The goal of this project is to build an agent that performs thorough, automated code reviews locally in VS Code. It checks for:
+The goal of this project is to build an agent that performs thorough, automated code reviews
+locally in VS Code. It checks for:
 
 - **Security** — vulnerabilities, exposed secrets, authentication/authorization issues
 - **Correctness** — logic errors, data corruption risks, race conditions
@@ -17,7 +20,7 @@ The goal of this project is to build an agent that performs thorough, automated 
 
 Inspired by pr-agent's modular design:
 
-```
+```text
 src/
 ├── main.py           # CLI entry point (argparse)
 ├── config.py         # Configuration loading from .env
@@ -43,23 +46,27 @@ src/
 ### Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/isabelcabezasm/agent_reviewer.git
    cd agent_reviewer
    ```
 
 2. Install dependencies:
+
    ```bash
    uv sync
    ```
 
 3. Configure environment variables:
+
    ```bash
    cp .env.template .env
    # Edit .env with your Azure OpenAI credentials
    ```
 
    Required variables:
+
    | Variable | Description |
    |---|---|
    | `AZURE_MODEL_API_ENDPOINT` | Azure OpenAI API endpoint URL |
@@ -72,14 +79,19 @@ src/
 
 Authentication is controlled by the `AGENT_REVIEWER_API_KEY` environment variable:
 
-- **Set it** → all API endpoints and the Web UI require authentication
+- **Set it** → all API endpoints and the Web UI require
+  authentication
 - **Leave it empty** → authentication is disabled (open access)
 
-### Web UI
-When auth is enabled, the Web UI shows a **login page** where users enter the API key. A secure session cookie is set for 24 hours.
+### Web UI Authentication
 
-### REST API
+When auth is enabled, the Web UI shows a **login page** where users enter the API key.
+A secure session cookie is set for 24 hours.
+
+### REST API Authentication
+
 API clients authenticate via the `X-API-Key` header:
+
 ```bash
 curl -X POST https://your-api/api/review/code \
   -H "X-API-Key: your-api-key" \
@@ -89,11 +101,14 @@ curl -X POST https://your-api/api/review/code \
 
 Or via query parameter: `?api_key=your-api-key`
 
-### VS Code Extension
+### VS Code Extension Authentication
+
 Set the API key in VS Code Settings:
+
 - `agentReviewer.apiKey` — your API key (sent as `X-API-Key` header)
 
 ### Health Endpoint
+
 `/api/health` is always public (no auth required) for monitoring and probes.
 
 ### Usage
@@ -174,9 +189,11 @@ bin/review-install-hook
 bin/review-install-hook /path/to/other/repo
 ```
 
-After installation, every `git commit` automatically runs an AI review on staged changes. If **critical issues** are found, it asks for confirmation before proceeding.
+After installation, every `git commit` automatically runs an AI review on staged changes.
+If **critical issues** are found, it asks for confirmation before proceeding.
 
 To uninstall, remove the hook file:
+
 ```bash
 rm .git/hooks/pre-commit
 ```
@@ -194,7 +211,8 @@ Press `Ctrl+Shift+P` → **Tasks: Run Task** and pick:
 
 ## Web UI
 
-A full web interface for reviewing any GitHub repository — including **private repos** using a Personal Access Token.
+A full web interface for reviewing any GitHub repository — including **private repos**
+using a Personal Access Token.
 
 ### Launch the Web UI
 
@@ -202,7 +220,7 @@ A full web interface for reviewing any GitHub repository — including **private
 uv run uvicorn src.web.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Then open **http://localhost:8000** in your browser.
+Then open **<http://localhost:8000>** in your browser.
 
 ### Features
 
@@ -214,7 +232,7 @@ Then open **http://localhost:8000** in your browser.
 - **Rich Results** — score badge, expandable issues by severity, code suggestions, and positive highlights
 - **Raw YAML** — toggle the raw AI output
 
-### REST API
+### REST API Reference
 
 The web app exposes a REST API with three endpoints:
 
@@ -253,13 +271,15 @@ curl http://localhost:8000/api/health
 | `POST /api/review/diff` | Git diff text | Pre-commit hooks, CI pipelines |
 | `GET /api/health` | — | Monitoring |
 
-## VS Code Extension
+## VS Code Extension (Remote)
 
-A VS Code extension that calls the published API to review code directly from your editor, with results shown in a Markdown panel.
+A VS Code extension that calls the published API to review code directly from your editor,
+with results shown in a Markdown panel.
 
-### Setup
+### Extension Setup
 
 1. **Start the API** (locally or on Azure):
+
    ```bash
    # Local
    uv run uvicorn src.web.app:app --reload --host 0.0.0.0 --port 8000
@@ -271,6 +291,7 @@ A VS Code extension that calls the published API to review code directly from yo
    ```
 
 2. **Install the extension**:
+
    ```bash
    cd vscode-extension
    npm install && npm run compile
@@ -373,7 +394,7 @@ docker run -d \
   uvicorn src.web.app:app --host 0.0.0.0 --port 8000
 ```
 
-Then open **http://localhost:8000** — paste any repo URL + optional PAT and get a full review.
+Then open **<http://localhost:8000>** — paste any repo URL + optional PAT and get a full review.
 
 ## Deploy to Azure
 
@@ -386,12 +407,14 @@ bin/deploy --destroy # Tear down the Container App
 ```
 
 This creates:
+
 - An **Azure Container Registry** (`agentrevieweracr`) in resource group `my-tests`
 - A **Container Apps Environment** with a public HTTPS endpoint
 - A **Container App** running the API (scales to 0 when idle)
 
 After deploy, the script prints the URL. Set it in the VS Code extension:
-```
+
+```text
 agentReviewer.apiUrl = https://agent-reviewer.<region>.azurecontainerapps.io
 ```
 

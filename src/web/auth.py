@@ -14,10 +14,10 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, APIKeyQuery
 
-
 # ---------------------------------------------------------------------------
 # API Key configuration
 # ---------------------------------------------------------------------------
+
 
 def get_api_key() -> str:
     """Get the configured API key from environment.
@@ -113,8 +113,6 @@ async def verify_api_key(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Missing API key. Provide via X-API-Key header or api_key query parameter.",
     )
-
-    return provided_key
 
 
 # ---------------------------------------------------------------------------

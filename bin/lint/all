@@ -4,5 +4,10 @@
 set -eo pipefail
 cd "$(dirname "$0")/../.."
 
-bin/lint/md
+FIX_FLAG=""
+if [[ "$1" == "--fix" ]]; then
+    FIX_FLAG="--fix"
+fi
+
+bin/lint/md $FIX_FLAG
 bin/lint/py

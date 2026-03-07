@@ -62,9 +62,7 @@ class CodeReviewer:
         """
         diff = get_staged_diff(cwd=cwd)
         if not diff:
-            raise ValueError(
-                "No staged changes found. Use 'git add' to stage changes first."
-            )
+            raise ValueError("No staged changes found. Use 'git add' to stage changes first.")
         return self._review_diff(diff)
 
     def review_uncommitted(
@@ -106,9 +104,7 @@ class CodeReviewer:
         """
         diff = get_branch_diff(branch=branch, cwd=cwd)
         if not diff:
-            raise ValueError(
-                f"No changes found compared to branch '{branch}'."
-            )
+            raise ValueError(f"No changes found compared to branch '{branch}'.")
         return self._review_diff(diff)
 
     def review_commit(
@@ -130,9 +126,7 @@ class CodeReviewer:
         """
         diff = get_commit_diff(commit=commit, cwd=cwd)
         if not diff:
-            raise ValueError(
-                f"No changes found for commit '{commit}'."
-            )
+            raise ValueError(f"No changes found for commit '{commit}'.")
         return self._review_diff(diff)
 
     def review_files(self, file_paths: list[str]) -> str:

@@ -48,9 +48,7 @@ def clone_repo(
     auth_url = clean_url
     if github_pat:
         # https://github.com/owner/repo.git -> https://PAT@github.com/owner/repo.git
-        auth_url = clean_url.replace(
-            "https://", f"https://{github_pat}@"
-        )
+        auth_url = clean_url.replace("https://", f"https://{github_pat}@")
 
     tmp_dir = tempfile.mkdtemp(prefix="agent_reviewer_")
 
@@ -108,17 +106,41 @@ def get_repo_files(
     """
     if extensions is None:
         extensions = [
-            ".py", ".js", ".ts", ".tsx", ".jsx",
-            ".java", ".cs", ".go", ".rs", ".rb",
-            ".cpp", ".c", ".h", ".swift", ".kt",
-            ".sh", ".sql",
+            ".py",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".java",
+            ".cs",
+            ".go",
+            ".rs",
+            ".rb",
+            ".cpp",
+            ".c",
+            ".h",
+            ".swift",
+            ".kt",
+            ".sh",
+            ".sql",
         ]
 
     skip_dirs = {
-        ".git", "node_modules", "__pycache__", ".venv",
-        "venv", "dist", "build", ".next", "vendor",
-        ".tox", ".mypy_cache", ".pytest_cache",
-        "coverage", ".coverage", "htmlcov",
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "dist",
+        "build",
+        ".next",
+        "vendor",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "coverage",
+        ".coverage",
+        "htmlcov",
     }
 
     repo = Path(repo_path)

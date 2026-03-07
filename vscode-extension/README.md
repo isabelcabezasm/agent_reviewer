@@ -1,6 +1,7 @@
 # Agent Reviewer — VS Code Extension
 
-AI-powered code review directly in your editor. Reviews files, selections, or git diffs by calling the Agent Reviewer API.
+AI-powered code review directly in your editor. Reviews files, selections, or git diffs
+by calling the Agent Reviewer API.
 
 ## Setup
 
@@ -30,6 +31,7 @@ code --install-extension agent-reviewer-0.1.0.vsix
 ### 3. Configure (optional)
 
 In VS Code settings:
+
 - `agentReviewer.apiUrl` — API server URL (default: `http://localhost:8000`)
 - `agentReviewer.instructions` — Default review instructions for every review
 
