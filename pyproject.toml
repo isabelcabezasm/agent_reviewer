@@ -1,7 +1,7 @@
 [project]
 name = "agent_reviewer"
 version = "0.1.0"
-description = "Isa base container"
+description = "AI-powered local code review agent inspired by pr-agent"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -10,7 +10,8 @@ authors = [
 ]
 
 dependencies = [
-  "python-dotenv>=1.0.0",  
+  "python-dotenv>=1.0.0",
+  "openai>=1.0.0",
 ]
 
 [dependency-groups]
@@ -25,9 +26,9 @@ dev = [
 default-groups = "all"
 
 [project.urls]
-Homepage = "https://github.com/isabelcabezasm/base_container"
-Repository = "https://github.com/isabelcabezasm/base_container"
-Issues = "https://github.com/isabelcabezasm/base_container"
+Homepage = "https://github.com/isabelcabezasm/agent_reviewer"
+Repository = "https://github.com/isabelcabezasm/agent_reviewer"
+Issues = "https://github.com/isabelcabezasm/agent_reviewer"
 
 [project.scripts]
 agent_reviewer = "src:main"
@@ -51,7 +52,7 @@ reportCallInDefaultInitializer = "error"
 reportImplicitOverride = "none"
 reportImplicitStringConcatenation = "error"
 reportImportCycles = "error"
-reportMissingSuperCall = "error"
+reportMissingSuperCall = "none"
 reportPropertyTypeMismatch = "error"
 reportUninitializedInstanceVariable = "error"
 reportUnnecessaryTypeIgnoreComment = "error"
