@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+# ┌──────────────────────────────────────────────────────────────┐
+# │  Deploy Agent Reviewer MCP Server to Azure Container Apps    │
+# │  Resource Group: my-tests                                    │
+# └──────────────────────────────────────────────────────────────┘
+#
+# Deploys the MCP server in streamable-http mode with bearer-token
+# authentication so it can be used from any VS Code instance.
+#
+# Prerequisites:
+#   - Azure CLI (az) logged in
+#   - Docker (for building the image)
+#   - A .env file with AI provider credentials
+#
+# Usage:
+#   bin/deploy-mcp              # Full deploy (build + push + create)
+#   bin/deploy-mcp --update     # Update existing app only
+#   bin/deploy-mcp --destroy    # Tear down the MCP Container App
+
+set -eo pipefail
+cd "$(dirname "$0")/.."
+
+# ── Configuration ────────────────────────────────────────────────
+RESOURCE_GROUP="my-tests"
+LOCATION="switzerlandnorth"
+APP_NAME="agent-reviewer-mcp"
+ENVIRONMENT_NAME="agent-reviewer-env"
+ACR_NAME="agentrevieweracr"
+IMAGE_NAME="agent-reviewer"
+IMAGE_TAG="latest"
+FULL_IMAGE="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
+
+# MCP server settings
+MCP_PORT=8080
+CPU="0.5"
+MEMORY="1.0Gi"
+MIN_REPLICAS=0
+MAX_REPLICAS=3
+
+# ── Load environment variables ───────────────────────────────────
+ENV_FILE=".env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "❌ .env file not found. Copy .env.template and fill in your credentials."
+    exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+# Require an API key for remote MCP (security)
+if [ -z "${AGENT_REVIEWER_API_KEY:-}" ]; then
+    echo "❌ AGENT_REVIEWER_API_KEY must be set in .env for remote MCP deployment."
+    echo "   This key secures the MCP server with bearer-token auth."
+    echo ""
+    echo "   Generate one:  openssl rand -hex 32"
+    exit 1
+fi
+
+# ── Helper functions ─────────────────────────────────────────────
+log()  { echo ""; echo "══════════════════════════════════════════"; echo "  $1"; echo "══════════════════════════════════════════"; }
+info() { echo "  ℹ️  $1"; }
+ok()   { echo "  ✅ $1"; }
+
+# ── Destroy mode ─────────────────────────────────────────────────
+if [ "${1}" = "--destroy" ]; then
+    log "Destroying MCP Server Container App"
+
+    info "Deleting Container App: ${APP_NAME}..."
+    az containerapp delete \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --yes 2>/dev/null || true
+
+    ok "MCP Container App deleted."
+    exit 0
+fi
+
+# ── Pre-flight checks ───────────────────────────────────────────
+log "Pre-flight checks"
+
+info "Checking Azure CLI login..."
+az account show > /dev/null 2>&1 || {
+    echo "❌ Not logged in to Azure CLI. Run: az login"
+    exit 1
+}
+
+SUBSCRIPTION=$(az account show --query name -o tsv)
+ok "Logged in to Azure (subscription: ${SUBSCRIPTION})"
+
+# ── Ensure shared infra exists ───────────────────────────────────
+log "Ensuring shared infrastructure"
+
+# Resource Group
+if ! az group show --name "$RESOURCE_GROUP" > /dev/null 2>&1; then
+    info "Creating resource group '${RESOURCE_GROUP}'..."
+    az group create --name "$RESOURCE_GROUP" --location "$LOCATION" -o none
+fi
+ok "Resource group '${RESOURCE_GROUP}' ready"
+
+# ACR
+if [ "${1}" != "--update" ]; then
+    if ! az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" > /dev/null 2>&1; then
+        info "Creating ACR '${ACR_NAME}'..."
+        az acr create \
+            --name "$ACR_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --sku Basic \
+            --admin-enabled true \
+            -o none
+    fi
+    ok "ACR '${ACR_NAME}' ready"
+fi
+
+# ── Build & Push ─────────────────────────────────────────────────
+log "Build & Push Docker Image"
+
+info "Building image with ACR Build..."
+az acr build \
+    --registry "$ACR_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --image "${IMAGE_NAME}:${IMAGE_TAG}" \
+    --build-arg "BUILD_DATE=$(date -u +%Y%m%d%H%M%S)" \
+    --file Dockerfile \
+    . 2>&1 | tail -5
+
+ok "Image pushed to ${FULL_IMAGE}"
+
+# ── Container Apps Environment ───────────────────────────────────
+if [ "${1}" != "--update" ]; then
+    if ! az containerapp env show --name "$ENVIRONMENT_NAME" --resource-group "$RESOURCE_GROUP" > /dev/null 2>&1; then
+        info "Creating Container Apps environment..."
+        az containerapp env create \
+            --name "$ENVIRONMENT_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            -o none
+    fi
+    ok "Environment '${ENVIRONMENT_NAME}' ready"
+fi
+
+# ── ACR Credentials ─────────────────────────────────────────────
+ACR_USERNAME=$(az acr credential show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query username -o tsv)
+ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query "passwords[0].value" -o tsv)
+ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --query loginServer -o tsv)
+
+# ── Determine AI provider env vars ───────────────────────────────
+# MCP_ALLOWED_HOSTS will be set after we know the app URL.
+# For --update we retrieve the existing FQDN; for first deploy
+# we set it after the container app is created.
+ENV_VARS=(
+    "AGENT_REVIEWER_API_KEY=${AGENT_REVIEWER_API_KEY}"
+    "MCP_PORT=${MCP_PORT}"
+)
+
+if [ "${AI_PROVIDER:-}" = "copilot" ]; then
+    ENV_VARS+=(
+        "AI_PROVIDER=copilot"
+        "GITHUB_TOKEN=${GITHUB_TOKEN:-}"
+        "COPILOT_MODEL_NAME=${COPILOT_MODEL_NAME:-gpt-4.1}"
+    )
+else
+    ENV_VARS+=(
+        "AZURE_MODEL_API_ENDPOINT=${AZURE_MODEL_API_ENDPOINT:-}"
+        "AZURE_MODEL_API_KEY=${AZURE_MODEL_API_KEY:-}"
+        "AZURE_MODEL_API_NAME=${AZURE_MODEL_API_NAME:-}"
+        "AZURE_MODEL_API_VERSION=${AZURE_MODEL_API_VERSION:-}"
+    )
+fi
+
+# ── Deploy / Update Container App ────────────────────────────────
+log "Deploy MCP Server"
+
+# Command override: run MCP server in HTTP mode instead of the web API
+
+if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" > /dev/null 2>&1; then
+    info "Updating existing Container App '${APP_NAME}'..."
+    az containerapp update \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --image "$FULL_IMAGE" \
+        --set-env-vars "${ENV_VARS[@]}" \
+        -o none
+    ok "Container App updated"
+else
+    info "Creating Container App '${APP_NAME}'..."
+    az containerapp create \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --environment "$ENVIRONMENT_NAME" \
+        --image "$FULL_IMAGE" \
+        --registry-server "$ACR_LOGIN_SERVER" \
+        --registry-username "$ACR_USERNAME" \
+        --registry-password "$ACR_PASSWORD" \
+        --target-port "$MCP_PORT" \
+        --ingress external \
+        --cpu "$CPU" \
+        --memory "$MEMORY" \
+        --min-replicas "$MIN_REPLICAS" \
+        --max-replicas "$MAX_REPLICAS" \
+        --env-vars "${ENV_VARS[@]}" \
+        -o none
+
+    # Set the startup command — uses YAML update to get a properly
+    # split command array (az CLI --command flag joins into one string)
+    info "Setting MCP startup command..."
+
+    # Build env YAML dynamically from ENV_VARS array
+    ENV_YAML=""
+    for entry in "${ENV_VARS[@]}"; do
+        key="${entry%%=*}"
+        val="${entry#*=}"
+        ENV_YAML+="        - name: ${key}"$'\n'"          value: \"${val}\""$'\n'
+    done
+
+    az containerapp update \
+        --name "$APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --yaml /dev/stdin <<EOYAML
+properties:
+  template:
+    containers:
+    - name: ${APP_NAME}
+      image: ${FULL_IMAGE}
+      command:
+      - python
+      - "-m"
+      - src.mcp_server
+      - "--sse"
+      env:
+${ENV_YAML}      resources:
+        cpu: ${CPU}
+        memory: ${MEMORY}
+EOYAML
+
+    ok "Container App created"
+fi
+
+# ── Get the URL & set allowed hosts ──────────────────────────────
+log "Deployment Complete!"
+
+APP_URL=$(az containerapp show \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "properties.configuration.ingress.fqdn" -o tsv)
+
+# Allow the external hostname through MCP's DNS rebinding protection
+info "Setting MCP_ALLOWED_HOSTS=${APP_URL}..."
+az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --set-env-vars "MCP_ALLOWED_HOSTS=${APP_URL}" \
+    -o none
+
+echo ""
+echo "  🚀 MCP Server is live!"
+echo ""
+echo "  ┌─────────────────────────────────────────────────────────────┐"
+echo "  │  URL: https://${APP_URL}                                    "
+echo "  │                                                             "
+echo "  │  Add to any VS Code's .vscode/mcp.json:                    "
+echo "  │                                                             "
+echo "  │  {                                                          "
+echo "  │    \"servers\": {                                           "
+echo "  │      \"agent-reviewer\": {                                  "
+echo "  │        \"type\": \"sse\",                                   "
+echo "  │        \"url\": \"https://${APP_URL}/sse\",                  "
+echo "  │        \"headers\": {                                       "
+echo "  │          \"Authorization\": \"Bearer ${AGENT_REVIEWER_API_KEY}\""
+echo "  │        }                                                    "
+echo "  │      }                                                      "
+echo "  │    }                                                        "
+echo "  │  }                                                          "
+echo "  │                                                             "
+echo "  │  Health: https://${APP_URL}/health                          "
+echo "  └─────────────────────────────────────────────────────────────┘"
+echo ""
+echo "  To update after code changes:  bin/deploy-mcp --update"
+echo "  To tear down:                  bin/deploy-mcp --destroy"
+echo ""

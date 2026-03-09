@@ -16,6 +16,7 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.0",
   "pyyaml>=6.0",
+  "mcp[cli]>=1.0.0",
 ]
 
 [dependency-groups]
@@ -37,6 +38,7 @@ Issues = "https://github.com/isabelcabezasm/agent_reviewer"
 
 [project.scripts]
 agent_reviewer = "src:main"
+agent-reviewer-mcp = "src.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]

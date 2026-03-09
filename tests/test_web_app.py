@@ -99,7 +99,7 @@ class TestReviewEndpoint:
     """Tests for the /api/review endpoint."""
 
     @patch("src.web.app.cleanup_repo")
-    @patch("src.web.app.AIHandler")
+    @patch("src.web.app.create_handler")
     @patch("src.web.app.get_repo_files")
     @patch("src.web.app.read_files")
     @patch("src.web.app.clone_repo")
@@ -110,7 +110,7 @@ class TestReviewEndpoint:
         mock_clone: MagicMock,
         mock_read: MagicMock,
         mock_get_files: MagicMock,
-        mock_ai_cls: MagicMock,
+        mock_handler_factory: MagicMock,
         mock_cleanup: MagicMock,
     ) -> None:
         """Test full repo review returns review results."""
@@ -128,7 +128,7 @@ class TestReviewEndpoint:
         mock_clone.return_value = "/tmp/repo"
         mock_get_files.return_value = ["/tmp/repo/app.py"]
         mock_read.return_value = "## File: 'app.py'\n   1 print('hi')"
-        mock_ai_cls.return_value.chat_completion.return_value = (
+        mock_handler_factory.return_value.chat_completion.return_value = (
             "```yaml\nreview:\n  score: 90\n  summary: Great code\n```"
         )
 
@@ -177,12 +177,12 @@ class TestReviewEndpoint:
 class TestCodeReviewEndpoint:
     """Tests for the /api/review/code endpoint."""
 
-    @patch("src.web.app.AIHandler")
+    @patch("src.web.app.create_handler")
     @patch("src.web.app.load_config")
     def test_review_code_returns_result(
         self,
         mock_config: MagicMock,
-        mock_ai_cls: MagicMock,
+        mock_handler_factory: MagicMock,
     ) -> None:
         """Test that code review endpoint returns a review."""
         from src.config import AppConfig, AzureModelConfig, ReviewConfig
@@ -196,7 +196,7 @@ class TestCodeReviewEndpoint:
             ),
             review=ReviewConfig(),
         )
-        mock_ai_cls.return_value.chat_completion.return_value = (
+        mock_handler_factory.return_value.chat_completion.return_value = (
             "```yaml\nreview:\n  score: 80\n  summary: Decent code\n```"
         )
 

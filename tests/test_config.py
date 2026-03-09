@@ -5,7 +5,15 @@ from unittest.mock import patch
 
 import pytest
 
-from src.config import AppConfig, AzureModelConfig, ReviewConfig, load_config
+from src.config import (
+    AIProvider,
+    AppConfig,
+    AzureModelConfig,
+    CopilotModelConfig,
+    ReviewConfig,
+    load_config,
+)
+from src.handler_factory import create_handler
 
 
 class TestAzureModelConfig:
@@ -75,6 +83,8 @@ class TestLoadConfig:
     def test_loads_config_from_environment(self) -> None:
         """Test that config loads correctly from environment variables."""
         config = load_config()
+        assert config.provider == AIProvider.AZURE
+        assert config.azure is not None
         assert config.azure.endpoint == "https://test.openai.azure.com/"
         assert config.azure.api_key == "test-key-123"
         assert config.azure.model_name == "gpt-5-pro"
@@ -108,3 +118,114 @@ class TestLoadConfig:
         """Test that error message lists specific missing variables."""
         with pytest.raises(ValueError, match="AZURE_MODEL_API_NAME"):
             _ = load_config()
+
+    @patch.dict(
+        os.environ,
+        {
+            "AI_PROVIDER": "copilot",
+            "GITHUB_TOKEN": "ghp_test123",
+            "COPILOT_MODEL_NAME": "gpt-4.1",
+        },
+    )
+    def test_loads_copilot_config(self) -> None:
+        """Test that load_config detects Copilot provider."""
+        config = load_config()
+        assert config.provider == AIProvider.COPILOT
+        assert config.copilot is not None
+        assert config.copilot.github_token == "ghp_test123"
+        assert config.copilot.model_name == "gpt-4.1"
+
+    @patch.dict(
+        os.environ,
+        {
+            "AI_PROVIDER": "",
+            "GITHUB_TOKEN": "ghp_auto",
+            "AZURE_MODEL_API_ENDPOINT": "",
+            "AZURE_MODEL_API_NAME": "",
+            "AZURE_MODEL_API_VERSION": "",
+        },
+    )
+    def test_auto_detects_copilot_from_github_token(self) -> None:
+        """Test auto-detection when only GITHUB_TOKEN is set."""
+        config = load_config()
+        assert config.provider == AIProvider.COPILOT
+        assert config.copilot is not None
+
+
+class TestCopilotModelConfig:
+    """Tests for CopilotModelConfig dataclass."""
+
+    def test_default_values(self) -> None:
+        """Test default Copilot config values."""
+        cfg = CopilotModelConfig()
+        assert cfg.github_token == ""
+        assert cfg.model_name == "gpt-4.1"
+
+    def test_custom_values(self) -> None:
+        """Test custom Copilot config values."""
+        cfg = CopilotModelConfig(
+            github_token="ghp_custom",
+            model_name="claude-sonnet-4",
+        )
+        assert cfg.github_token == "ghp_custom"
+        assert cfg.model_name == "claude-sonnet-4"
+
+    def test_config_is_frozen(self) -> None:
+        """Test that Copilot config is immutable."""
+        cfg = CopilotModelConfig(github_token="ghp_test")
+        with pytest.raises(AttributeError):
+            cfg.github_token = "new"  # type: ignore[misc]
+
+
+class TestCreateHandler:
+    """Tests for the create_handler factory function."""
+
+    @patch("src.ai_handler.AzureOpenAI")
+    def test_creates_azure_handler(
+        self,
+        _mock_client: MagicMock,
+    ) -> None:
+        """Test that Azure handler is created for AZURE provider."""
+        from src.ai_handler import AIHandler
+
+        config = AppConfig(
+            provider=AIProvider.AZURE,
+            azure=AzureModelConfig(
+                endpoint="https://test.openai.azure.com/",
+                api_key="key",
+                model_name="gpt-5-pro",
+                api_version="2024-12-01",
+            ),
+        )
+        handler = create_handler(config)
+        assert isinstance(handler, AIHandler)
+
+    @patch("src.copilot_handler.OpenAI")
+    def test_creates_copilot_handler(
+        self,
+        _mock_client: MagicMock,
+    ) -> None:
+        """Test that Copilot handler is created for COPILOT provider."""
+        from src.copilot_handler import CopilotAIHandler
+
+        config = AppConfig(
+            provider=AIProvider.COPILOT,
+            copilot=CopilotModelConfig(
+                github_token="ghp_test123",
+                model_name="gpt-4.1",
+            ),
+        )
+        handler = create_handler(config)
+        assert isinstance(handler, CopilotAIHandler)
+
+    def test_raises_when_azure_config_missing(self) -> None:
+        """Test error when Azure selected but no config."""
+        config = AppConfig(provider=AIProvider.AZURE)
+        with pytest.raises(ValueError, match="Azure provider"):
+            _ = create_handler(config)
+
+    def test_raises_when_copilot_config_missing(self) -> None:
+        """Test error when Copilot selected but no config."""
+        config = AppConfig(provider=AIProvider.COPILOT)
+        with pytest.raises(ValueError, match="Copilot provider"):
+            _ = create_handler(config)

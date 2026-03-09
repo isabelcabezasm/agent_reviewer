@@ -2,7 +2,8 @@
 
 An AI-powered local code review agent inspired by
 [qodo-ai/pr-agent](https://github.com/qodo-ai/pr-agent). Reviews your code directly from the
-command line using Azure OpenAI (`gpt-5-pro`), **without needing to create a Pull Request**.
+command line, web UI, or **GitHub Copilot (via MCP)** using Azure OpenAI or GitHub Copilot as the
+AI backend — **without needing to create a Pull Request**.
 
 ## Purpose
 
@@ -16,23 +17,39 @@ locally in VS Code. It checks for:
 - **Performance** — N+1 queries, memory leaks, inefficient algorithms
 - **Best Practices** — language-specific idioms, consistent patterns, documentation
 
+## AI Provider Support
+
+Agent Reviewer supports two AI backends:
+
+| Provider | Description | Auth |
+|---|---|---|
+| **Azure OpenAI** | Azure-hosted models (e.g., `gpt-5-pro`) | API key or Entra ID |
+| **GitHub Copilot** | GitHub Copilot Chat API (e.g., `gpt-4.1`, `claude-sonnet-4`) | GitHub token or `gh` CLI |
+
+The provider is auto-detected from environment variables, or set explicitly with `AI_PROVIDER`.
+
 ## Architecture
 
 Inspired by pr-agent's modular design:
 
 ```text
 src/
-├── main.py           # CLI entry point (argparse)
-├── config.py         # Configuration loading from .env
-├── ai_handler.py     # Azure OpenAI API client
-├── reviewer.py       # Core review orchestrator
-├── prompts.py        # Review prompt templates
-├── diff_utils.py     # Git diff & file utilities
-├── github_utils.py   # GitHub repo cloning (public + private)
+├── main.py              # CLI entry point (argparse)
+├── config.py            # Configuration loading from .env
+├── ai_handler.py        # Azure OpenAI API client
+├── copilot_handler.py   # GitHub Copilot API client
+├── handler_factory.py   # Factory to create the right AI handler
+├── reviewer.py          # Core review orchestrator
+├── prompts.py           # Review prompt templates
+├── diff_utils.py        # Git diff & file utilities
+├── github_utils.py      # GitHub repo cloning (public + private)
+├── mcp_server.py        # MCP server for GitHub Copilot integration
 └── web/
-    ├── app.py        # FastAPI web application & REST API
+    ├── app.py           # FastAPI web application & REST API
+    ├── auth.py          # Authentication (API key + sessions)
     └── static/
-        └── index.html  # Web UI (single-page app)
+        ├── index.html   # Web UI (single-page app)
+        └── login.html   # Login page
 ```
 
 ## Getting Started
@@ -41,7 +58,9 @@ src/
 
 - Python 3.12+
 - [uv](https://github.com/astral-sh/uv) (Python package manager)
-- An Azure OpenAI deployment with `gpt-5-pro`
+- One of the following AI backends:
+  - **Azure OpenAI** — a deployed model (e.g., `gpt-5-pro`)
+  - **GitHub Copilot** — a Copilot subscription + GitHub token
 
 ### Setup
 
@@ -62,18 +81,35 @@ src/
 
    ```bash
    cp .env.template .env
-   # Edit .env with your Azure OpenAI credentials
+   # Edit .env with your AI provider credentials
    ```
 
-   Required variables:
+#### Azure OpenAI Configuration
 
    | Variable | Description |
    |---|---|
+   | `AI_PROVIDER` | Set to `azure` (or leave empty — Azure is the default) |
    | `AZURE_MODEL_API_ENDPOINT` | Azure OpenAI API endpoint URL |
-   | `AZURE_MODEL_API_KEY` | Azure OpenAI API key |
+   | `AZURE_MODEL_API_KEY` | Azure OpenAI API key (or leave empty for Entra ID auth) |
    | `AZURE_MODEL_API_NAME` | Deployed model name (e.g., `gpt-5-pro`) |
    | `AZURE_MODEL_API_VERSION` | API version (e.g., `2024-12-01-preview`) |
-   | `AGENT_REVIEWER_API_KEY` | API key for authentication (leave empty to disable) |
+
+#### GitHub Copilot Configuration
+
+   | Variable | Description |
+   |---|---|
+   | `AI_PROVIDER` | Set to `copilot` |
+   | `GITHUB_TOKEN` | GitHub token (PAT or Copilot token). If omitted, falls back to `gh auth token` |
+   | `COPILOT_MODEL_NAME` | Model to use (default: `gpt-4.1`). Other options: `gpt-4o`, `o3-mini`, `claude-sonnet-4` |
+
+> **Auto-detection:** If `AI_PROVIDER` is not set, the provider is auto-detected. If Azure env
+> vars are present, Azure is used. If only `GITHUB_TOKEN` is set, Copilot is used.
+
+#### Other Configuration
+
+   | Variable | Description |
+   |---|---|
+   | `AGENT_REVIEWER_API_KEY` | API key for web UI/API authentication (leave empty to disable) |
 
 ## Authentication
 
@@ -209,6 +245,135 @@ Press `Ctrl+Shift+P` → **Tasks: Run Task** and pick:
 | Review: Current File | Review the file open in the editor |
 | Review: Launch Web UI | Start the web interface |
 
+## MCP Server (GitHub Copilot Integration)
+
+Agent Reviewer includes an **MCP (Model Context Protocol) server** that exposes code review tools
+directly to GitHub Copilot in VS Code. This means you can ask Copilot to review your code and it
+will use Agent Reviewer's tools automatically.
+
+### Available MCP Tools
+
+| Tool | Description |
+|---|---|
+| `review_staged_changes` | Review staged (`git add`) changes |
+| `review_uncommitted_changes` | Review all pending changes (staged + unstaged) |
+| `review_branch_changes` | Review diff between current HEAD and a target branch |
+| `review_current_branch` | Review all changes on the current branch vs `main` |
+| `review_commit` | Review changes from a specific commit |
+| `review_files` | Review specific files by path |
+| `review_repository` | Scan and review all code files in a repository |
+| `review_code_snippet` | Review a raw code snippet (no git needed) |
+| `review_diff` | Review a raw unified diff (no git needed) |
+
+### Setup (VS Code)
+
+The MCP server configuration is already included in `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "agent-reviewer": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "python", "-m", "src.mcp_server"]
+    }
+  }
+}
+```
+
+No extra setup needed — open the workspace in VS Code and the MCP server is available to Copilot.
+
+### Usage with Copilot
+
+Once the MCP server is running, ask Copilot things like:
+
+- *"Review my staged changes"*
+- *"Review the current branch against main"*
+- *"Review the file src/config.py"*
+- *"Review this code snippet for security issues"*
+- *"Review the whole repository, focus on error handling"*
+
+Copilot will automatically select the appropriate MCP tool and return a structured YAML review.
+
+### Running Manually
+
+```bash
+# stdio mode (default, used by VS Code)
+uv run python -m src.mcp_server
+
+# SSE mode (HTTP)
+uv run python -m src.mcp_server --sse
+
+# Streamable HTTP mode (recommended for remote deployment)
+uv run python -m src.mcp_server --streamable-http
+```
+
+### Using MCP from Another VS Code (Remote)
+
+You can deploy the MCP server as an HTTP service and connect to it from **any VS Code instance**
+— no need to clone the repo or install dependencies on the remote machine.
+
+#### Option 1: Deploy to Azure Container Apps
+
+```bash
+# One command deploys the MCP server with bearer-token auth
+bin/deploy-mcp
+
+# Update after code changes
+bin/deploy-mcp --update
+
+# Tear down
+bin/deploy-mcp --destroy
+```
+
+The script requires `AGENT_REVIEWER_API_KEY` in your `.env` (used as the bearer token).
+After deployment, it prints the URL and the `mcp.json` config to copy.
+
+#### Option 2: Run with Docker
+
+```bash
+docker run -d \
+  -p 8080:8080 \
+  --env-file .env \
+  -e MCP_PORT=8080 \
+  ghcr.io/isabelcabezasm/agent_reviewer:latest \
+  python -m src.mcp_server --streamable-http
+```
+
+#### Option 3: Run Directly
+
+```bash
+# On the server machine
+AGENT_REVIEWER_API_KEY=your-secret-key \
+MCP_HOST=0.0.0.0 \
+MCP_PORT=8080 \
+uv run python -m src.mcp_server --streamable-http
+```
+
+#### Connect from VS Code
+
+On the **client** VS Code, create `.vscode/mcp.json` in your project:
+
+```json
+{
+  "servers": {
+    "agent-reviewer": {
+      "type": "http",
+      "url": "https://YOUR-MCP-SERVER-URL/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR-API-KEY"
+      }
+    }
+  }
+}
+```
+
+Replace `YOUR-MCP-SERVER-URL` and `YOUR-API-KEY` with your deployment values.
+An example config is provided in `.vscode/mcp.json.remote-example`.
+
+> **Security:** When `AGENT_REVIEWER_API_KEY` is set, all MCP HTTP requests require
+> `Authorization: Bearer <key>`. The `/health` endpoint is always public.
+
 ## Web UI
 
 A full web interface for reviewing any GitHub repository — including **private repos**
@@ -334,6 +499,13 @@ AZURE_MODEL_API_ENDPOINT=https://your-endpoint.openai.azure.com/
 AZURE_MODEL_API_KEY=your-key
 AZURE_MODEL_API_NAME=gpt-5-pro
 AZURE_MODEL_API_VERSION=2024-12-01-preview
+EOF
+
+# Or use GitHub Copilot instead:
+cat > .env << EOF
+AI_PROVIDER=copilot
+GITHUB_TOKEN=ghp_your_token
+COPILOT_MODEL_NAME=gpt-4.1
 EOF
 
 # Review your code

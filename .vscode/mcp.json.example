@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "agent-reviewer": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "src.mcp_server"
+      ],
+      "env": {}
+    }
+  }
+}

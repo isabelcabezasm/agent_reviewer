@@ -5,7 +5,6 @@ building prompts, and sending them to the AI model for analysis.
 Inspired by qodo-ai/pr-agent's PRReviewer pattern.
 """
 
-from src.ai_handler import AIHandler
 from src.config import AppConfig
 from src.diff_utils import (
     detect_language,
@@ -16,6 +15,7 @@ from src.diff_utils import (
     get_staged_diff,
     read_files,
 )
+from src.handler_factory import create_handler
 from src.prompts import (
     build_system_prompt,
     build_user_prompt_diff,
@@ -39,11 +39,11 @@ class CodeReviewer:
         """Initialize the code reviewer.
 
         Parameters:
-            config: Application configuration including Azure
-                credentials and review settings.
+            config: Application configuration including AI
+                provider credentials and review settings.
         """
         self.config = config
-        self.ai_handler = AIHandler(config.azure)
+        self.ai_handler = create_handler(config)
 
     def review_staged(
         self,

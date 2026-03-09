@@ -1,9 +1,9 @@
 """FastAPI web application for the Agent Reviewer.
 
 Provides a web UI and REST API to review GitHub repositories
-(including private ones) and raw code/diffs using Azure OpenAI.
-Designed to be called from VS Code extensions, CI pipelines,
-or any HTTP client.
+(including private ones) and raw code/diffs using Azure OpenAI
+or GitHub Copilot. Designed to be called from VS Code extensions,
+CI pipelines, or any HTTP client.
 """
 
 import re
@@ -17,10 +17,10 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from src.ai_handler import AIHandler
 from src.config import AppConfig, ReviewConfig, load_config
 from src.diff_utils import detect_language, read_files
 from src.github_utils import cleanup_repo, clone_repo, get_default_branch_diff, get_repo_files
+from src.handler_factory import create_handler
 from src.prompts import build_system_prompt, build_user_prompt_diff, build_user_prompt_files
 from src.web.auth import (
     create_session,
@@ -231,7 +231,12 @@ def review_repo(
 
     if request.instructions:
         review_cfg = ReviewConfig(extra_instructions=request.instructions)
-        config = AppConfig(azure=config.azure, review=review_cfg)
+        config = AppConfig(
+            provider=config.provider,
+            azure=config.azure,
+            copilot=config.copilot,
+            review=review_cfg,
+        )
 
     # Clone the repository
     repo_path: str | None = None
@@ -333,9 +338,14 @@ def review_code(
 
     if request.instructions:
         review_cfg = ReviewConfig(extra_instructions=request.instructions)
-        config = AppConfig(azure=config.azure, review=review_cfg)
+        config = AppConfig(
+            provider=config.provider,
+            azure=config.azure,
+            copilot=config.copilot,
+            review=review_cfg,
+        )
 
-    ai = AIHandler(config.azure)
+    ai = create_handler(config)
 
     # Build the code with line numbers and file header
     lines = request.code.splitlines()
@@ -393,7 +403,12 @@ def review_diff(
 
     if request.instructions:
         review_cfg = ReviewConfig(extra_instructions=request.instructions)
-        config = AppConfig(azure=config.azure, review=review_cfg)
+        config = AppConfig(
+            provider=config.provider,
+            azure=config.azure,
+            copilot=config.copilot,
+            review=review_cfg,
+        )
 
     try:
         review_text = _review_with_diff(config, request.diff)
@@ -424,7 +439,7 @@ def _review_with_diff(config: AppConfig, diff: str) -> str:
     """
     from src.diff_utils import get_changed_files_from_diff
 
-    ai = AIHandler(config.azure)
+    ai = create_handler(config)
     changed_files = get_changed_files_from_diff(diff)
     language = detect_language(changed_files)
 
@@ -453,7 +468,7 @@ def _review_with_files(
     Returns:
         tuple: (review_text, files_count)
     """
-    ai = AIHandler(config.azure)
+    ai = create_handler(config)
     file_paths = get_repo_files(repo_path, extensions=extensions, max_files=max_files)
 
     if not file_paths:

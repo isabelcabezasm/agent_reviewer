@@ -1,0 +1,41 @@
+{
+  // Local MCP server configuration for Agent Reviewer.
+  //
+  // Runs the MCP server locally via stdio, communicating directly
+  // with GitHub Copilot in VS Code.
+  //
+  // The agent reviewer uses the Copilot provider (via `gh auth token`)
+  // so no extra API key is needed.
+  "servers": {
+    "agent-reviewer": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["run", "python", "-m", "src.mcp_server"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+
+
+// {
+//   // Remote MCP server configuration for Agent Reviewer.
+//   //
+//   // Use this when the MCP server is deployed as an HTTP service
+//   // (e.g., on Azure Container Apps). Copy this file to the
+//   // .vscode/ folder of any project where you want AI code reviews.
+//   //
+//   // For local (stdio) mode, replace with:
+//   //   { "servers": { "agent-reviewer": { "type": "stdio", "command": "uv", "args": ["run","python","-m","src.mcp_server"] } } }
+//   //
+//   // Current deployment:
+//   //   https://agent-reviewer-mcp.greenocean-9ad4d72c.switzerlandnorth.azurecontainerapps.io
+//   "servers": {
+//     "agent-reviewer": {
+//       "type": "sse",
+//       "url": "https://agent-reviewer-mcp.greenocean-9ad4d72c.switzerlandnorth.azurecontainerapps.io/sse",
+//       "headers": {
+//         "Authorization": "Bearer ar-review-2026-secure-key"
+//       }
+//     }
+//   }
+// }

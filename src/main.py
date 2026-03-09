@@ -124,7 +124,12 @@ def main() -> None:
         review_config = ReviewConfig(
             extra_instructions=args.instructions,
         )
-        config = AppConfig(azure=config.azure, review=review_config)
+        config = AppConfig(
+            provider=config.provider,
+            azure=config.azure,
+            copilot=config.copilot,
+            review=review_config,
+        )
 
     reviewer = CodeReviewer(config)
 

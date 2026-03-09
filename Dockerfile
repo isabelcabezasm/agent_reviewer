@@ -48,6 +48,9 @@ ENV PYTHONUNBUFFERED=1
 
 # No ENTRYPOINT — use CMD so it can be overridden by Container Apps
 # Default: run the web API server
+#
+# Override for MCP server:
+#   docker run ... python -m src.mcp_server --streamable-http
 CMD ["uvicorn", "src.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Health check for web mode
