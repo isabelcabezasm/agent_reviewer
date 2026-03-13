@@ -1,0 +1,8 @@
+FROM mcr.microsoft.com/devcontainers/base:jammy
+
+# Install corporate CA certificates so feature installs can reach
+# external registries through SSL-inspecting proxies.
+
+# Uncomment and modify the following lines to copy your CA certificates into the container and update the certificate store.
+# COPY certs/*.crt /usr/local/share/ca-certificates/
+# RUN update-ca-certificates
