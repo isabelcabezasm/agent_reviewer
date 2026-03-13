@@ -1,0 +1,17 @@
+# for this container to work, you need to create a devcontainer-shared network with the following command:
+# docker network create devcontainer-shared
+# This allows the container to communicate with the host machine, which is necessary for the extension to send requests to the API.
+
+services:
+  agent-reviewer:
+    build:
+      context: .
+      dockerfile: Dockerfile.devcontainer
+    volumes:
+      - ..:/workspaces/agent_reviewer:cached
+    command: sleep infinity
+
+networks:
+  default:
+    name: devcontainer-shared
+    external: true
