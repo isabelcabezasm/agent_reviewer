@@ -4,10 +4,13 @@ Provides functions to clone repositories (including private ones
 via PAT) into temporary directories and extract code for review.
 """
 
+import logging
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def clone_repo(
@@ -39,6 +42,8 @@ def clone_repo(
     if not repo_url:
         raise ValueError("Repository URL is required.")
 
+    logger.info("Cloning repository: %s", repo_url)
+
     # Normalize URL: remove trailing .git and slashes
     clean_url = repo_url.rstrip("/")
     if not clean_url.endswith(".git"):
@@ -52,9 +57,11 @@ def clone_repo(
 
     tmp_dir = tempfile.mkdtemp(prefix="agent_reviewer_")
 
-    cmd = ["git", "clone", "--depth", "1"]
+    cmd = ["git", "clone"]
     if branch:
         cmd.extend(["--branch", branch])
+    else:
+        cmd.extend(["--depth", "1"])
     cmd.extend([auth_url, tmp_dir])
 
     try:
@@ -160,38 +167,62 @@ def get_repo_files(
     return files
 
 
+def _detect_default_branch(repo_path: str) -> str:
+    """Detect the default branch name from origin/HEAD."""
+    try:
+        result = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True, text=True, check=True, cwd=repo_path,
+        )
+        # refs/remotes/origin/develop -> develop
+        return result.stdout.strip().split("/")[-1]
+    except subprocess.CalledProcessError:
+        return "main"
+
+
 def get_default_branch_diff(
     repo_path: str,
-    base_branch: str = "main",
+    base_branch: str = "auto",
 ) -> str:
-    """Get the diff of the default branch's latest commit.
+    """Get the diff between the current branch and a base branch.
+
+    For branch reviews, diffs the current HEAD against the
+    merge-base with the base branch. Auto-detects the default
+    branch (main, master, develop, etc.) from origin/HEAD.
 
     Parameters:
         repo_path: Path to the cloned repository.
-        base_branch: The base branch name.
+        base_branch: The base branch to diff against.
+            Use 'auto' to auto-detect from origin/HEAD.
 
     Returns:
-        str: The diff of the latest commit, or empty string
-            if no commits exist.
+        str: The unified diff, or empty string if unavailable.
     """
+    if base_branch == "auto":
+        base_branch = _detect_default_branch(repo_path)
+    logger.info("Diffing against base branch: %s", base_branch)
+
     try:
-        result = subprocess.run(
-            ["git", "log", "--oneline", "-1"],
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd=repo_path,
+        merge_base = subprocess.run(
+            ["git", "merge-base", f"origin/{base_branch}", "HEAD"],
+            capture_output=True, text=True, check=True, cwd=repo_path,
         )
-        if not result.stdout.strip():
+        base_commit = merge_base.stdout.strip()
+        if not base_commit:
             return ""
 
         diff_result = subprocess.run(
-            ["git", "diff", "HEAD~1..HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=repo_path,
+            ["git", "diff", base_commit, "HEAD"],
+            capture_output=True, text=True, check=True, cwd=repo_path,
         )
         return diff_result.stdout.strip()
     except subprocess.CalledProcessError:
-        return ""
+        # Fallback: diff last commit only
+        try:
+            diff_result = subprocess.run(
+                ["git", "diff", "HEAD~1..HEAD"],
+                capture_output=True, text=True, check=False, cwd=repo_path,
+            )
+            return diff_result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return ""

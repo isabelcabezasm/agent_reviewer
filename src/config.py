@@ -10,12 +10,15 @@ The provider is auto-detected from the ``AI_PROVIDER`` env var,
 or inferred from which credentials are available.
 """
 
+import logging
 import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 
 class AIProvider(Enum):
@@ -200,13 +203,17 @@ def load_config(env_path: str | None = None) -> AppConfig:
             detected provider are missing.
     """
     if env_path:
+        logger.debug("Loading env from: %s", env_path)
         _ = load_dotenv(env_path)
     else:
         # Look for .env in project root
         project_root = Path(__file__).parent.parent
-        _ = load_dotenv(project_root / ".env")
+        env_file = project_root / ".env"
+        logger.debug("Loading env from: %s", env_file)
+        _ = load_dotenv(env_file)
 
     provider = _detect_provider()
+    logger.info("Detected AI provider: %s", provider.value)
 
     if provider == AIProvider.COPILOT:
         copilot_cfg = _load_copilot_config()

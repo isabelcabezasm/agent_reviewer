@@ -23,7 +23,7 @@ Agent Reviewer supports two AI backends:
 
 | Provider | Description | Auth |
 |---|---|---|
-| **Azure OpenAI** | Azure-hosted models (e.g., `gpt-5-pro`) | API key or Entra ID |
+| **Azure OpenAI** | Azure-hosted models (e.g., `gpt-5.4-pro`) | API key or Entra ID |
 | **GitHub Copilot** | GitHub Copilot Chat API (e.g., `gpt-4.1`, `claude-sonnet-4`) | GitHub token or `gh` CLI |
 
 The provider is auto-detected from environment variables, or set explicitly with `AI_PROVIDER`.
@@ -36,13 +36,14 @@ Inspired by pr-agent's modular design:
 src/
 ├── main.py              # CLI entry point (argparse)
 ├── config.py            # Configuration loading from .env
-├── ai_handler.py        # Azure OpenAI API client
+├── ai_handler.py        # Azure OpenAI API client (Chat Completions + Responses API)
 ├── copilot_handler.py   # GitHub Copilot API client
-├── handler_factory.py   # Factory to create the right AI handler
+├── handler_factory.py   # Factory to create the right AI handler (cached)
 ├── reviewer.py          # Core review orchestrator
 ├── prompts.py           # Review prompt templates
 ├── diff_utils.py        # Git diff & file utilities
-├── github_utils.py      # GitHub repo cloning (public + private)
+├── github_utils.py      # GitHub repo cloning & branch diffing
+├── ssl_utils.py         # SSL/TLS certificate configuration
 ├── mcp_server.py        # MCP server for GitHub Copilot integration
 └── web/
     ├── app.py           # FastAPI web application & REST API
@@ -110,6 +111,9 @@ src/
    | Variable | Description |
    |---|---|
    | `AGENT_REVIEWER_API_KEY` | API key for web UI/API authentication (leave empty to disable) |
+   | `USE_CERTS` | Set to `true` to use a custom CA bundle for SSL (default: `false`) |
+   | `CERTS_PATH` | Path to CA certificate bundle (default: `/etc/ssl/certs/ca-certificates.crt`) |
+   | `LOG_LEVEL` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`) |
 
 ## Authentication
 
@@ -461,7 +465,7 @@ with results shown in a Markdown panel.
    cd vscode-extension
    npm install && npm run compile
    npx vsce package
-   code --install-extension agent-reviewer-0.1.0.vsix
+   code --install-extension isa-improvement-system-agent-0.3.0.vsix
    ```
 
 3. **Configure** (VS Code Settings):
@@ -472,9 +476,12 @@ with results shown in a Markdown panel.
 
 | Command | What It Does |
 |---|---|
-| **Agent Reviewer: Review Current File** | Sends the full file to the API |
-| **Agent Reviewer: Review Selection** | Sends only selected code |
-| **Agent Reviewer: Review Uncommitted Changes** | Sends git diff to the API |
+| **ISA: Review Current File** | Sends the full file to the API |
+| **ISA: Review Selection** | Sends only selected code |
+| **ISA: Review Uncommitted Changes** | Sends git diff of uncommitted changes |
+| **ISA: Review Commited and Uncommited changes** | Diffs all branch changes (committed + uncommitted) against the default branch |
+| **ISA: Review GitHub Repository** | Reviews a remote GitHub repo by URL |
+| **ISA: Test API Connection** | Verifies the API server is reachable |
 
 All commands are also in the **right-click context menu**.
 

@@ -13,11 +13,15 @@ Compatible models include ``gpt-4o``, ``gpt-4.1``, ``o3-mini``,
 provides access to.
 """
 
+import logging
 import subprocess
 
 from openai import OpenAI
 
 from src.config import CopilotModelConfig
+from src.ssl_utils import build_httpx_client
+
+logger = logging.getLogger(__name__)
 
 # GitHub Models inference endpoint (OpenAI-compatible).
 # Works with standard GitHub PATs (unlike api.githubcopilot.com
@@ -52,9 +56,15 @@ class CopilotAIHandler:
             )
             raise ValueError(msg)
 
+        logger.info(
+            "Initializing Copilot handler: "
+            "model=%s base_url=%s",
+            config.model_name, COPILOT_API_BASE,
+        )
         self.client: OpenAI = OpenAI(
             base_url=COPILOT_API_BASE,
             api_key=token,
+            http_client=build_httpx_client(),
         )
         self.model_name = config.model_name
 
@@ -80,15 +90,31 @@ class CopilotAIHandler:
         Raises:
             openai.APIError: If the API request fails.
         """
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            temperature=temperature,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        logger.debug(
+            "Copilot request: model=%s temp=%.2f "
+            "system_prompt_len=%d user_prompt_len=%d",
+            self.model_name, temperature,
+            len(system_prompt), len(user_prompt),
         )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                temperature=temperature,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+        except Exception:
+            logger.exception(
+                "Copilot API call failed: model=%s",
+                self.model_name,
+            )
+            raise
         result: str = str(response.choices[0].message.content)
+        logger.debug(
+            "Copilot response: %d chars", len(result),
+        )
         return result
 
 

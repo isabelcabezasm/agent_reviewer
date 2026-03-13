@@ -4,8 +4,11 @@ Provides functions to retrieve git diffs (staged, unstaged,
 branch comparisons) and read file contents for review.
 """
 
+import logging
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def run_git_command(args: list[str], cwd: str | None = None) -> str:
@@ -24,13 +27,21 @@ def run_git_command(args: list[str], cwd: str | None = None) -> str:
         subprocess.CalledProcessError: If the git command
             exits with a non-zero return code.
     """
-    result = subprocess.run(
-        ["git", *args],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=cwd,
-    )
+    logger.debug("Running git command: git %s", " ".join(args))
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=cwd,
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error(
+            "Git command failed: git %s\nstderr: %s",
+            " ".join(args), e.stderr,
+        )
+        raise
     return result.stdout.strip()
 
 

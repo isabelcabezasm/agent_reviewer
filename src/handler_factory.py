@@ -7,7 +7,12 @@ based on the application configuration.
 
 from __future__ import annotations
 
+import logging
+import threading
+
 from src.config import AIProvider, AppConfig
+
+logger = logging.getLogger(__name__)
 
 
 class ChatHandler:
@@ -36,8 +41,16 @@ class ChatHandler:
         raise NotImplementedError
 
 
+_cached_handler: ChatHandler | None = None
+_cached_provider: AIProvider | None = None
+_handler_lock = threading.Lock()
+
+
 def create_handler(config: AppConfig) -> ChatHandler:
-    """Create the appropriate AI handler for the active provider.
+    """Create or return the cached AI handler for the active provider.
+
+    Reuses the same handler instance across requests so that
+    runtime state (e.g. Responses API fallback) is preserved.
 
     Parameters:
         config: Application configuration with provider info.
@@ -48,18 +61,36 @@ def create_handler(config: AppConfig) -> ChatHandler:
     Raises:
         ValueError: If the provider config is incomplete.
     """
-    if config.provider == AIProvider.COPILOT:
-        from src.copilot_handler import CopilotAIHandler
+    global _cached_handler, _cached_provider
 
-        if config.copilot is None:
-            msg = "Copilot provider selected but no config provided."
+    if _cached_handler is not None and _cached_provider == config.provider:
+        return _cached_handler
+
+    with _handler_lock:
+        # Double-check after acquiring lock
+        if _cached_handler is not None and _cached_provider == config.provider:
+            return _cached_handler
+
+        logger.info(
+            "Creating AI handler for provider=%s",
+            config.provider.value,
+        )
+        if config.provider == AIProvider.COPILOT:
+            from src.copilot_handler import CopilotAIHandler
+
+            if config.copilot is None:
+                msg = "Copilot provider selected but no config provided."
+                raise ValueError(msg)
+            _cached_handler = CopilotAIHandler(config.copilot)  # type: ignore[return-value]
+            _cached_provider = config.provider
+            return _cached_handler
+
+        # Default: Azure
+        from src.ai_handler import AIHandler
+
+        if config.azure is None:
+            msg = "Azure provider selected but no config provided."
             raise ValueError(msg)
-        return CopilotAIHandler(config.copilot)  # type: ignore[return-value]
-
-    # Default: Azure
-    from src.ai_handler import AIHandler
-
-    if config.azure is None:
-        msg = "Azure provider selected but no config provided."
-        raise ValueError(msg)
-    return AIHandler(config.azure)  # type: ignore[return-value]
+        _cached_handler = AIHandler(config.azure)  # type: ignore[return-value]
+        _cached_provider = config.provider
+        return _cached_handler

@@ -6,6 +6,8 @@ or GitHub Copilot. Designed to be called from VS Code extensions,
 CI pipelines, or any HTTP client.
 """
 
+import logging
+import os
 import re
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -110,6 +112,15 @@ class DiffReviewRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
+
+# Configure root logger so all `src.*` loggers emit to stderr.
+# INFO level by default; set LOG_LEVEL env var to DEBUG for more.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Agent Reviewer",
@@ -224,9 +235,14 @@ def review_repo(
         HTTPException: On clone failure, config error, or AI error.
     """
     # Load Azure config
+    logger.info(
+        "Review request: repo=%s mode=%s branch=%s",
+        request.repo_url, request.mode, request.branch,
+    )
     try:
         config = load_config()
     except ValueError as e:
+        logger.error("Config load failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Server config error: {e}") from e
 
     if request.instructions:
@@ -241,6 +257,7 @@ def review_repo(
     # Clone the repository
     repo_path: str | None = None
     try:
+        logger.info("Cloning repo %s", request.repo_url)
         repo_path = clone_repo(
             repo_url=request.repo_url,
             github_pat=request.github_pat,
@@ -259,7 +276,7 @@ def review_repo(
             review_text = _review_with_diff(config, diff)
 
         elif request.mode == "branch":
-            diff = get_default_branch_diff(repo_path, base_branch=request.branch or "main")
+            diff = get_default_branch_diff(repo_path)
             if diff:
                 files_count = len(diff.splitlines())
                 review_text = _review_with_diff(config, diff)
@@ -277,6 +294,10 @@ def review_repo(
 
         # Parse YAML from response
         parsed = _parse_review_yaml(review_text)
+        logger.info(
+            "Review complete: %d files reviewed for %s",
+            files_count, request.repo_url,
+        )
 
         return ReviewResponse(
             raw_review=review_text,
@@ -288,8 +309,10 @@ def review_repo(
     except HTTPException:
         raise
     except ValueError as e:
+        logger.warning("Review validation error: %s", e)
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
+        logger.exception("Review failed for %s", request.repo_url)
         raise HTTPException(
             status_code=500,
             detail=f"Review failed: {e}",
@@ -331,9 +354,14 @@ def review_code(
     if not request.code.strip():
         raise HTTPException(status_code=400, detail="No code provided.")
 
+    logger.info(
+        "Code review request: lang=%s file=%s",
+        request.language, request.filename or "<inline>",
+    )
     try:
         config = load_config()
     except ValueError as e:
+        logger.error("Config load failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Server config error: {e}") from e
 
     if request.instructions:
@@ -367,6 +395,7 @@ def review_code(
             user_prompt=user_prompt,
         )
         parsed = _parse_review_yaml(review_text)
+        logger.info("Code review complete for %s", request.filename or "<inline>")
 
         return ReviewResponse(
             raw_review=review_text,
@@ -374,6 +403,7 @@ def review_code(
             files_reviewed=1,
         )
     except Exception as e:
+        logger.exception("Code review failed")
         raise HTTPException(status_code=500, detail=f"Review failed: {e}") from e
 
 
@@ -396,9 +426,14 @@ def review_diff(
     if not request.diff.strip():
         raise HTTPException(status_code=400, detail="No diff provided.")
 
+    logger.info(
+        "Diff review request: %d bytes",
+        len(request.diff),
+    )
     try:
         config = load_config()
     except ValueError as e:
+        logger.error("Config load failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Server config error: {e}") from e
 
     if request.instructions:
@@ -413,12 +448,14 @@ def review_diff(
     try:
         review_text = _review_with_diff(config, request.diff)
         parsed = _parse_review_yaml(review_text)
+        logger.info("Diff review complete")
 
         return ReviewResponse(
             raw_review=review_text,
             parsed_review=parsed,
         )
     except Exception as e:
+        logger.exception("Diff review failed")
         raise HTTPException(status_code=500, detail=f"Review failed: {e}") from e
 
 
@@ -442,6 +479,10 @@ def _review_with_diff(config: AppConfig, diff: str) -> str:
     ai = create_handler(config)
     changed_files = get_changed_files_from_diff(diff)
     language = detect_language(changed_files)
+    logger.debug(
+        "Reviewing diff: %d changed files, language=%s",
+        len(changed_files), language,
+    )
 
     system_prompt = build_system_prompt(
         extra_instructions=config.review.extra_instructions,
@@ -470,6 +511,10 @@ def _review_with_files(
     """
     ai = create_handler(config)
     file_paths = get_repo_files(repo_path, extensions=extensions, max_files=max_files)
+    logger.debug(
+        "Reviewing %d files from %s",
+        len(file_paths), repo_path,
+    )
 
     if not file_paths:
         raise ValueError("No matching code files found in the repository.")
@@ -505,8 +550,10 @@ def _parse_review_yaml(raw_text: str) -> dict[str, Any] | None:
     try:
         parsed_data: object = yaml.safe_load(yaml_text)
         if not isinstance(parsed_data, dict):
+            logger.debug("YAML parse result is not a dict")
             return None
         data = cast(dict[str, Any], parsed_data)
         return data.get("review", data)
-    except yaml.YAMLError:
+    except yaml.YAMLError as e:
+        logger.warning("Failed to parse review YAML: %s", e)
         return None

@@ -5,7 +5,11 @@ building prompts, and sending them to the AI model for analysis.
 Inspired by qodo-ai/pr-agent's PRReviewer pattern.
 """
 
+import logging
+
 from src.config import AppConfig
+
+logger = logging.getLogger(__name__)
 from src.diff_utils import (
     detect_language,
     get_all_uncommitted_diff,
@@ -43,6 +47,7 @@ class CodeReviewer:
                 provider credentials and review settings.
         """
         self.config = config
+        logger.info("Initializing CodeReviewer")
         self.ai_handler = create_handler(config)
 
     def review_staged(
@@ -60,6 +65,7 @@ class CodeReviewer:
         Raises:
             ValueError: If there are no staged changes.
         """
+        logger.info("Reviewing staged changes (cwd=%s)", cwd)
         diff = get_staged_diff(cwd=cwd)
         if not diff:
             raise ValueError("No staged changes found. Use 'git add' to stage changes first.")
@@ -80,6 +86,7 @@ class CodeReviewer:
         Raises:
             ValueError: If there are no uncommitted changes.
         """
+        logger.info("Reviewing uncommitted changes (cwd=%s)", cwd)
         diff = get_all_uncommitted_diff(cwd=cwd)
         if not diff:
             raise ValueError("No uncommitted changes found.")
@@ -102,6 +109,10 @@ class CodeReviewer:
         Raises:
             ValueError: If there are no changes vs the branch.
         """
+        logger.info(
+            "Reviewing branch diff: branch=%s cwd=%s",
+            branch, cwd,
+        )
         diff = get_branch_diff(branch=branch, cwd=cwd)
         if not diff:
             raise ValueError(f"No changes found compared to branch '{branch}'.")
@@ -124,6 +135,10 @@ class CodeReviewer:
         Raises:
             ValueError: If there are no changes for the commit.
         """
+        logger.info(
+            "Reviewing commit: commit=%s cwd=%s",
+            commit, cwd,
+        )
         diff = get_commit_diff(commit=commit, cwd=cwd)
         if not diff:
             raise ValueError(f"No changes found for commit '{commit}'.")
@@ -145,6 +160,10 @@ class CodeReviewer:
         if not file_paths:
             raise ValueError("No files specified for review.")
 
+        logger.info(
+            "Reviewing %d files: %s",
+            len(file_paths), file_paths,
+        )
         code = read_files(file_paths)
         language = detect_language(file_paths)
 

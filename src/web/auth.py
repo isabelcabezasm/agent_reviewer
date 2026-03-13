@@ -7,12 +7,15 @@ via the AGENT_REVIEWER_API_KEY environment variable.
 
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import APIKeyHeader, APIKeyQuery
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # API Key configuration
