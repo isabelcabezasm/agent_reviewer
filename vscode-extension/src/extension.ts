@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { reviewCode, reviewDiff, ReviewResponse } from "./api";
+import { healthCheck, reviewCode, reviewDiff, reviewRepo, ReviewResponse } from "./api";
 
 /**
  * Activates the Agent Reviewer extension.
@@ -9,7 +9,10 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("agentReviewer.reviewFile", handleReviewFile),
     vscode.commands.registerCommand("agentReviewer.reviewSelection", handleReviewSelection),
-    vscode.commands.registerCommand("agentReviewer.reviewDiff", handleReviewDiff)
+    vscode.commands.registerCommand("agentReviewer.reviewDiff", handleReviewDiff),
+    vscode.commands.registerCommand("agentReviewer.reviewBranch", handleReviewBranch),
+    vscode.commands.registerCommand("agentReviewer.reviewRepo", handleReviewRepo),
+    vscode.commands.registerCommand("agentReviewer.testConnection", handleTestConnection)
   );
 }
 
@@ -88,6 +91,151 @@ async function handleReviewDiff(): Promise<void> {
   await runReview("Reviewing uncommitted changes...", () =>
     reviewDiff(getApiUrl(), { diff, instructions }, apiKey)
   );
+}
+
+async function handleReviewBranch(): Promise<void> {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    vscode.window.showWarningMessage("No workspace folder open.");
+    return;
+  }
+
+  const cwd = workspaceFolder.uri.fsPath;
+  const instructions = getInstructions();
+  const apiKey = getApiKey();
+
+  // Detect the default branch from origin/HEAD
+  let defaultBranch = "main";
+  const originHead = await runGitCommand(
+    ["symbolic-ref", "refs/remotes/origin/HEAD"],
+    cwd
+  );
+  if (originHead.trim()) {
+    defaultBranch = originHead.trim().split("/").pop() || "main";
+  } else {
+    // Try common default branches
+    for (const candidate of ["main", "master", "develop"]) {
+      const check = await runGitCommand(
+        ["rev-parse", "--verify", `origin/${candidate}`],
+        cwd
+      );
+      if (check.trim()) {
+        defaultBranch = candidate;
+        break;
+      }
+    }
+  }
+
+  // Find merge-base between default branch and current HEAD
+  const mergeBase = await runGitCommand(
+    ["merge-base", `origin/${defaultBranch}`, "HEAD"],
+    cwd
+  );
+  if (!mergeBase.trim()) {
+    vscode.window.showWarningMessage(
+      `Could not find merge-base with origin/${defaultBranch}. Are you on a feature branch?`
+    );
+    return;
+  }
+
+  // Diff from merge-base to working tree (committed + uncommitted)
+  const diff = await runGitCommand(
+    ["diff", mergeBase.trim()],
+    cwd
+  );
+
+  if (!diff.trim()) {
+    vscode.window.showInformationMessage(
+      `No changes found compared to origin/${defaultBranch}.`
+    );
+    return;
+  }
+
+  const currentBranch = await runGitCommand(["branch", "--show-current"], cwd);
+  const branchName = currentBranch.trim() || "current branch";
+
+  await runReview(
+    `Reviewing branch '${branchName}' vs '${defaultBranch}' (committed + uncommitted)...`,
+    () => reviewDiff(getApiUrl(), { diff, instructions }, apiKey)
+  );
+}
+
+async function handleReviewRepo(): Promise<void> {
+  const repoUrl = await vscode.window.showInputBox({
+    prompt: "Enter the GitHub repository URL to review",
+    placeHolder: "https://github.com/owner/repo",
+    validateInput: (value) => {
+      if (!value.trim()) return "Repository URL is required";
+      if (!/^https?:\/\/.+/.test(value)) return "Must be a valid URL";
+      return null;
+    },
+  });
+  if (!repoUrl) return;
+
+  const mode = await vscode.window.showQuickPick(
+    [
+      { label: "Full Review", description: "Review all files in the repository", value: "full" },
+      { label: "Branch Diff", description: "Review changes from a specific branch", value: "branch" },
+      { label: "Latest Commit", description: "Review the latest commit diff", value: "commit" },
+    ],
+    { placeHolder: "Select review mode" }
+  );
+  if (!mode) return;
+
+  let branch: string | undefined;
+  if (mode.value === "branch") {
+    branch =
+      (await vscode.window.showInputBox({
+        prompt: "Enter the branch name",
+        placeHolder: "main",
+      })) || undefined;
+    if (!branch) return;
+  }
+
+  const githubPat =
+    (await vscode.window.showInputBox({
+      prompt: "GitHub PAT for private repos (leave empty for public repos)",
+      password: true,
+    })) || undefined;
+
+  const instructions = getInstructions();
+  const apiKey = getApiKey();
+
+  await runReview("Reviewing repository...", () =>
+    reviewRepo(
+      getApiUrl(),
+      {
+        repo_url: repoUrl,
+        github_pat: githubPat,
+        mode: mode.value,
+        branch,
+        instructions,
+        max_files: 30,
+      },
+      apiKey
+    )
+  );
+}
+
+async function handleTestConnection(): Promise<void> {
+  const apiUrl = getApiUrl();
+  const apiKey = getApiKey();
+
+  try {
+    const result = await healthCheck(apiUrl, apiKey);
+    if (result.status === "ok") {
+      vscode.window.showInformationMessage(
+        `Agent Reviewer: Connected to ${apiUrl} successfully!`
+      );
+    } else {
+      vscode.window.showWarningMessage(
+        `Agent Reviewer: API responded but status is '${result.status}'.`
+      );
+    }
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    vscode.window.showErrorMessage(`Agent Reviewer: ${message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

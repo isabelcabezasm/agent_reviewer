@@ -1,8 +1,8 @@
 {
-  "name": "agent-reviewer",
-  "displayName": "Agent Reviewer",
-  "description": "AI-powered code review from your editor. Reviews files, selections, or diffs using Azure OpenAI.",
-  "version": "0.1.0",
+  "name": "isa-improvement-system-agent",
+  "displayName": "ISA (Improvement System Agent)",
+  "description": "AI-powered code review from your editor. Reviews files, selections, or diffs using Azure OpenAI or GitHub Copilot.",
+  "version": "0.3.0",
   "publisher": "isabelcabezasm",
   "license": "MIT",
   "repository": {
@@ -20,6 +20,7 @@
     "code review",
     "ai",
     "azure openai",
+    "github copilot",
     "security",
     "quality"
   ],
@@ -30,19 +31,31 @@
     "commands": [
       {
         "command": "agentReviewer.reviewFile",
-        "title": "Agent Reviewer: Review Current File"
+        "title": "ISA: Review Current File"
       },
       {
         "command": "agentReviewer.reviewSelection",
-        "title": "Agent Reviewer: Review Selection"
+        "title": "ISA: Review Selection"
       },
       {
         "command": "agentReviewer.reviewDiff",
-        "title": "Agent Reviewer: Review Uncommitted Changes"
+        "title": "ISA: Review Uncommitted Changes"
+      },
+      {
+        "command": "agentReviewer.reviewBranch",
+        "title": "ISA: Review Commited and Uncommited changes"
+      },
+      {
+        "command": "agentReviewer.reviewRepo",
+        "title": "ISA: Review GitHub Repository"
+      },
+      {
+        "command": "agentReviewer.testConnection",
+        "title": "ISA: Test API Connection"
       }
     ],
     "configuration": {
-      "title": "Agent Reviewer",
+      "title": "ISA (Improvement System Agent)",
       "properties": {
         "agentReviewer.apiUrl": {
           "type": "string",
@@ -71,6 +84,26 @@
           "command": "agentReviewer.reviewSelection",
           "group": "agentReviewer",
           "when": "editorHasSelection"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "agentReviewer.reviewFile",
+          "when": "editorIsOpen"
+        },
+        {
+          "command": "agentReviewer.reviewSelection",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "agentReviewer.reviewDiff",
+          "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "agentReviewer.reviewRepo"
+        },
+        {
+          "command": "agentReviewer.testConnection"
         }
       ]
     }

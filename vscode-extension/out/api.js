@@ -35,6 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reviewCode = reviewCode;
 exports.reviewDiff = reviewDiff;
+exports.reviewRepo = reviewRepo;
+exports.healthCheck = healthCheck;
 const https = __importStar(require("https"));
 const http = __importStar(require("http"));
 // ---------------------------------------------------------------------------
@@ -52,8 +54,20 @@ async function reviewCode(baseUrl, payload, apiKey) {
 async function reviewDiff(baseUrl, payload, apiKey) {
     return postJson(`${baseUrl}/api/review/diff`, payload, apiKey);
 }
+/**
+ * Send a repo URL to the /api/review endpoint for full repository review.
+ */
+async function reviewRepo(baseUrl, payload, apiKey) {
+    return postJson(`${baseUrl}/api/review`, payload, apiKey);
+}
+/**
+ * Check the API health via GET /api/health.
+ */
+async function healthCheck(baseUrl, apiKey) {
+    return getJson(`${baseUrl}/api/health`, apiKey);
+}
 // ---------------------------------------------------------------------------
-// HTTP helper
+// HTTP helpers
 // ---------------------------------------------------------------------------
 /**
  * Makes a POST request with JSON body and returns parsed JSON response.
@@ -112,6 +126,61 @@ function postJson(url, body, apiKey) {
                 `Is the server running? (${err.message})`));
         });
         req.write(data);
+        req.end();
+    });
+}
+/**
+ * Makes a GET request and returns parsed JSON response.
+ * Works with both http and https URLs.
+ */
+function getJson(url, apiKey) {
+    return new Promise((resolve, reject) => {
+        const parsed = new URL(url);
+        const isHttps = parsed.protocol === "https:";
+        const lib = isHttps ? https : http;
+        const headers = {};
+        if (apiKey) {
+            headers["X-API-Key"] = apiKey;
+        }
+        const req = lib.request({
+            hostname: parsed.hostname,
+            port: parsed.port || (isHttps ? 443 : 80),
+            path: parsed.pathname,
+            method: "GET",
+            headers,
+        }, (res) => {
+            let responseData = "";
+            res.on("data", (chunk) => {
+                responseData += chunk.toString();
+            });
+            res.on("end", () => {
+                const statusCode = res.statusCode ?? 0;
+                if (statusCode >= 200 && statusCode < 300) {
+                    try {
+                        resolve(JSON.parse(responseData));
+                    }
+                    catch {
+                        reject(new Error(`Invalid JSON response from API`));
+                    }
+                }
+                else {
+                    let detail = `API returned status ${statusCode}`;
+                    try {
+                        const errBody = JSON.parse(responseData);
+                        if (errBody.detail)
+                            detail = errBody.detail;
+                    }
+                    catch {
+                        // Use status code message
+                    }
+                    reject(new Error(detail));
+                }
+            });
+        });
+        req.on("error", (err) => {
+            reject(new Error(`Cannot connect to Agent Reviewer API at ${url}. ` +
+                `Is the server running? (${err.message})`));
+        });
         req.end();
     });
 }
